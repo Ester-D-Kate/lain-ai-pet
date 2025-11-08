@@ -89,6 +89,21 @@
             grid-column: span 3;
         }
 
+        .mag-debug {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 10px;
+        }
+
+        .mag-debug .item {
+            text-align: center;
+            background: rgba(255,255,255,0.1);
+            padding: 10px;
+            border-radius: 8px;
+            flex: 1;
+            margin: 0 5px;
+        }
+
         button {
             width: 100%;
             padding: 15px;
@@ -238,11 +253,6 @@
             <span style="font-size: 0.85em; font-weight: normal;">Gyroscope Integration + Accelerometer Correction</span>
         </div>
         
-        <!-- BIG LIVE TEST DISPLAY -->
-        <div id="liveTest" style="background: #FF5722; color: white; padding: 20px; margin: 20px 0; border-radius: 10px; text-align: center; font-size: 1.5em; font-weight: bold; border: 3px solid white; display: none;">
-            🔴 LIVE: α=<span id="testAlpha">0</span>° β=<span id="testBeta">0</span>° γ=<span id="testGamma">0</span>°
-        </div>
-
         <!-- Gyroscope & Accelerometer -->
         <div class="card">
             <h2>📱 Motion Sensors</h2>
@@ -296,6 +306,18 @@
                     </div>
                 </div>
 
+                <h3 style="margin-top: 20px;">Magnetometer</h3>
+                <div class="mag-debug">
+                    <div class="item">
+                        <div class="label">Heading (°)</div>
+                        <div class="value" id="magHeading">N/A</div>
+                    </div>
+                    <div class="item">
+                        <div class="label">Source</div>
+                        <div class="value" id="magSource">none</div>
+                    </div>
+                </div>
+
                 <h3 style="margin-top: 20px;">Orientation - Relative (degrees from zero)</h3>
                 <div class="sensor-data">
                     <div class="sensor-value">
@@ -312,14 +334,6 @@
                     </div>
                 </div>
 
-                <h3 style="margin-top: 20px;">Magnetometer (heading °)</h3>
-                <div class="sensor-data">
-                    <div class="sensor-value full">
-                        <div class="label">Heading</div>
-                        <div class="value" id="magHeading">N/A</div>
-                    </div>
-                </div>
-
                 <h3 style="margin-top: 20px;">Orientation - Device API (raw)</h3>
                 <div class="sensor-data">
                     <div class="sensor-value">
@@ -333,22 +347,6 @@
                     <div class="sensor-value">
                         <div class="label">Gamma</div>
                         <div class="value" id="apiGamma">0.0</div>
-                    </div>
-                </div>
-
-                <h3 style="margin-top: 20px;">Debug - Absolute Values</h3>
-                <div class="sensor-data">
-                    <div class="sensor-value">
-                        <div class="label">Abs Alpha</div>
-                        <div class="value" id="absAlpha">0.0</div>
-                    </div>
-                    <div class="sensor-value">
-                        <div class="label">Abs Beta</div>
-                        <div class="value" id="absBeta">0.0</div>
-                    </div>
-                    <div class="sensor-value">
-                        <div class="label">Abs Gamma</div>
-                        <div class="value" id="absGamma">0.0</div>
                     </div>
                 </div>
 
@@ -453,15 +451,6 @@
             // Update counter for status
             updateCount++;
             
-            // Show live test display
-            const liveTest = document.getElementById('liveTest');
-            if (liveTest && data.calibrated) {
-                liveTest.style.display = 'block';
-                document.getElementById('testAlpha').textContent = data.orientation.absolute.alpha.toFixed(1);
-                document.getElementById('testBeta').textContent = data.orientation.absolute.beta.toFixed(1);
-                document.getElementById('testGamma').textContent = data.orientation.absolute.gamma.toFixed(1);
-            }
-            
             // Debug log first few updates
             if (updateCount <= 5) {
                 console.log('🔍 Update #' + updateCount + ' - Data received:', data);
@@ -511,24 +500,20 @@
             document.getElementById('orientBeta').textContent = betaVal;
             document.getElementById('orientGamma').textContent = gammaVal;
             
-            // Update absolute orientation values (for debugging)
-            const absAlphaVal = data.orientation.absolute.alpha.toFixed(1);
-            const absBetaVal = data.orientation.absolute.beta.toFixed(1);
-            const absGammaVal = data.orientation.absolute.gamma.toFixed(1);
-            
-            document.getElementById('absAlpha').textContent = absAlphaVal;
-            document.getElementById('absBeta').textContent = absBetaVal;
-            document.getElementById('absGamma').textContent = absGammaVal;
-
             // Update magnetometer heading when available
             const magnetometer = data.magnetometer || { available: false };
             const magHeadingEl = document.getElementById('magHeading');
+            const magSourceEl = document.getElementById('magSource');
             if (magnetometer.available && Number.isFinite(magnetometer.heading)) {
                 magHeadingEl.textContent = magnetometer.heading.toFixed(1);
                 magHeadingEl.style.opacity = '1';
+                magSourceEl.textContent = magnetometer.source || 'unknown';
+                magSourceEl.style.opacity = '1';
             } else {
                 magHeadingEl.textContent = 'N/A';
                 magHeadingEl.style.opacity = '0.6';
+                magSourceEl.textContent = 'none';
+                magSourceEl.style.opacity = '0.6';
             }
 
             // Display raw orientation from DeviceOrientation API

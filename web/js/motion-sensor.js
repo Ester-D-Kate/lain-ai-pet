@@ -33,9 +33,10 @@ class MotionSensor {
             accel: { x: 0, y: 0, z: 0 },
             orientation: { alpha: 0, beta: 0, gamma: 0 },
             apiOrientation: { alpha: 0, beta: 0, gamma: 0 },
-            magnetometer: { heading: 0, available: false, source: 'none' }
+            magnetometer: { heading: 0, raw: 0, available: false, source: 'none' }
         };
         this.nativeOrientation = { alpha: 0, beta: 0, gamma: 0 };
+        this.lastOrientationUpdate = 0;
         
         // Smoothing - lighter for Xiaomi phones
         this.smoothingFactor = this.isMIUI ? 0.7 : 0.85;
@@ -52,7 +53,8 @@ class MotionSensor {
         // Sensor fusion - complementary filter weights
         // Higher gyro weight = more responsive, lower = more drift correction
         this.gyroWeight = 0.98; // 98% gyro, 2% accel/mag correction
-    this.magnetometerWeight = this.isMIUI ? 0.05 : 0.02;
+        this.yawCorrectionWeight = this.isMIUI ? 0.2 : 0.1;
+        this.orientationCorrectionWeight = this.isMIUI ? 0.1 : 0.05;
         this.accelFilterWeight = 0.9; // Smoothing for accelerometer
         this.filteredAccel = { x: 0, y: 0, z: 0 };
         
@@ -60,9 +62,9 @@ class MotionSensor {
         this.hasGyroData = false;
         this.hasAccelData = false;
         this.hasOrientationData = false;
-    this._loggedNoAccel = false;
-    this._debugCounter = 0;
-    this.hasMagData = false;
+        this.hasMagData = false;
+        this._loggedNoAccel = false;
+        this._debugCounter = 0;
         
         // Callbacks
         this.onUpdate = null;
@@ -151,9 +153,12 @@ class MotionSensor {
         this.hasMagData = false;
         this.hasAccelData = false;
         this.hasGyroData = false;
-    this.current.magnetometer = { heading: 0, available: false, source: 'none' };
+    this.hasOrientationData = false;
+    this.current.magnetometer = { heading: 0, raw: 0, available: false, source: 'none' };
         this.current.apiOrientation = { alpha: 0, beta: 0, gamma: 0 };
+    this.nativeOrientation = { alpha: 0, beta: 0, gamma: 0 };
         this.lastGyroTimestamp = null;
+    this.lastOrientationUpdate = 0;
     }
     
     /**
@@ -169,7 +174,8 @@ class MotionSensor {
                 const accelAngles = this.getAccelerometerAngles();
                 let initialAlpha = 0;
                 if (this.hasMagData && this.current.magnetometer.available) {
-                    initialAlpha = this.current.magnetometer.heading;
+                    initialAlpha = (typeof this.current.magnetometer.raw === 'number') ?
+                        this.current.magnetometer.raw : this.current.magnetometer.heading;
                 } else if (this.hasOrientationData && typeof this.nativeOrientation.alpha === 'number') {
                     initialAlpha = this.wrapAngle360(this.nativeOrientation.alpha);
                 }
@@ -327,10 +333,22 @@ class MotionSensor {
 
             // Magnetometer correction for yaw when available
             if (this.hasMagData && this.current.magnetometer.available) {
-                const heading = this.current.magnetometer.heading;
+                const heading = (typeof this.current.magnetometer.raw === 'number') ?
+                    this.current.magnetometer.raw : this.current.magnetometer.heading;
                 const headingDiff = this.normalizeAngle(heading - this.integratedAngles.alpha);
                 this.integratedAngles.alpha = this.wrapAngle360(
-                    this.integratedAngles.alpha + (1 - this.gyroWeight) * headingDiff
+                    this.integratedAngles.alpha + this.yawCorrectionWeight * headingDiff
+                );
+            } else if (
+                this.hasOrientationData &&
+                typeof this.nativeOrientation.alpha === 'number' &&
+                !Number.isNaN(this.nativeOrientation.alpha) &&
+                currentTime - this.lastOrientationUpdate < 750
+            ) {
+                const orientationHeading = this.wrapAngle360(this.nativeOrientation.alpha);
+                const orientationDiff = this.normalizeAngle(orientationHeading - this.integratedAngles.alpha);
+                this.integratedAngles.alpha = this.wrapAngle360(
+                    this.integratedAngles.alpha + this.orientationCorrectionWeight * orientationDiff
                 );
             } else {
                 this.integratedAngles.alpha = this.wrapAngle360(this.integratedAngles.alpha);
@@ -411,6 +429,7 @@ class MotionSensor {
             beta: rawBeta,
             gamma: rawGamma
         };
+        this.lastOrientationUpdate = Date.now();
         this.current.apiOrientation = {
             alpha: this.roundToDecimal(rawAlpha ?? 0),
             beta: this.roundToDecimal(rawBeta ?? 0),
@@ -452,13 +471,14 @@ class MotionSensor {
             this.hasMagData = true;
             this.current.magnetometer = {
                 heading: this.roundToDecimal(wrappedHeading),
+                raw: wrappedHeading,
                 available: true,
                 source: headingSource || 'unknown'
             };
             if (this.useGyroIntegration) {
                 const correction = this.normalizeAngle(wrappedHeading - this.integratedAngles.alpha);
                 this.integratedAngles.alpha = this.wrapAngle360(
-                    this.integratedAngles.alpha + (1 - this.gyroWeight) * correction
+                    this.integratedAngles.alpha + this.yawCorrectionWeight * correction
                 );
             }
         }
