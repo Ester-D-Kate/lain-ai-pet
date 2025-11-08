@@ -41,8 +41,20 @@ class MotionSensor {
         // Drift compensation - stricter for Xiaomi
         this.driftThreshold = this.isMIUI ? 0.2 : 0.15;
         
+        // Gyroscope integration (for MIUI devices)
+        this.useGyroIntegration = this.isMIUI;
+        this.integratedAngles = { alpha: 0, beta: 0, gamma: 0 };
+        this.lastGyroTimestamp = null;
+        
+        // Sensor fusion - complementary filter weights
+        // Higher gyro weight = more responsive, lower = more drift correction
+        this.gyroWeight = 0.98; // 98% gyro, 2% accel/mag correction
+        this.accelFilterWeight = 0.9; // Smoothing for accelerometer
+        this.filteredAccel = { x: 0, y: 0, z: 0 };
+        
         // Track if we're getting data
         this.hasGyroData = false;
+        this.hasAccelData = false;
         this.hasOrientationData = false;
         
         // Callbacks
@@ -135,6 +147,19 @@ class MotionSensor {
      * Calibrate - set current position as zero point
      */
     calibrate() {
+        if (this.useGyroIntegration) {
+            // Initialize accelerometer filter with current values
+            if (this.hasAccelData) {
+                this.filteredAccel = { ...this.current.accel };
+            }
+            
+            // Reset integrated angles to zero for MIUI
+            this.integratedAngles = { alpha: 0, beta: 0, gamma: 0 };
+            this.lastGyroTimestamp = null;
+            this.current.orientation = { alpha: 0, beta: 0, gamma: 0 };
+            console.log('🔧 Sensor fusion initialized - Gyro + Accel complementary filter');
+        }
+        
         // Store current orientation as zero reference for all axes
         this.zeroPoint = {
             alpha: this.current.orientation.alpha,
@@ -169,43 +194,118 @@ class MotionSensor {
         if (!this.isActive) return;
         
         this.hasGyroData = true;
+        const currentTime = Date.now();
         
-        // Gyroscope (rotation rate in degrees/second) - for display only
+        // Accelerometer data - PROCESS FIRST for drift correction
+        if (event.accelerationIncludingGravity) {
+            this.hasAccelData = true;
+            const x = event.accelerationIncludingGravity.x || 0;
+            const y = event.accelerationIncludingGravity.y || 0;
+            const z = event.accelerationIncludingGravity.z || 0;
+            
+            // Smooth accelerometer data (reduce noise)
+            this.filteredAccel.x = this.filteredAccel.x * this.accelFilterWeight + x * (1 - this.accelFilterWeight);
+            this.filteredAccel.y = this.filteredAccel.y * this.accelFilterWeight + y * (1 - this.accelFilterWeight);
+            this.filteredAccel.z = this.filteredAccel.z * this.accelFilterWeight + z * (1 - this.accelFilterWeight);
+            
+            this.current.accel = {
+                x: this.cleanValue(this.filteredAccel.x),
+                y: this.cleanValue(this.filteredAccel.y),
+                z: this.cleanValue(this.filteredAccel.z)
+            };
+        }
+        
+        // Gyroscope (rotation rate in degrees/second)
         if (event.rotationRate) {
             const rawAlpha = event.rotationRate.alpha || 0;
             const rawBeta = event.rotationRate.beta || 0;
             const rawGamma = event.rotationRate.gamma || 0;
-            
-            // Log first gyro reading for debugging
-            if (!this.hasGyroData) {
-                console.log('First gyro reading:', { rawAlpha, rawBeta, rawGamma });
-            }
             
             // Apply drift threshold - ignore tiny movements
             const alpha = Math.abs(rawAlpha) > this.driftThreshold ? rawAlpha : 0;
             const beta = Math.abs(rawBeta) > this.driftThreshold ? rawBeta : 0;
             const gamma = Math.abs(rawGamma) > this.driftThreshold ? rawGamma : 0;
             
-            // Store for display only (not used for angle calculation)
+            // Store for display
             this.current.gyro = {
                 alpha: this.cleanValue(alpha),
                 beta: this.cleanValue(beta),
                 gamma: this.cleanValue(gamma)
             };
+            
+            // SENSOR FUSION: Gyroscope integration + Accelerometer correction
+            if (this.useGyroIntegration && this.calibrated && this.hasAccelData) {
+                if (this.lastGyroTimestamp !== null) {
+                    const dt = (currentTime - this.lastGyroTimestamp) / 1000; // seconds
+                    
+                    // Step 1: Integrate gyroscope (primary orientation source)
+                    this.integratedAngles.alpha += rawAlpha * dt;
+                    this.integratedAngles.beta += rawBeta * dt;
+                    this.integratedAngles.gamma += rawGamma * dt;
+                    
+                    // Step 2: Calculate orientation from accelerometer (drift correction)
+                    const accelAngles = this.getAccelerometerAngles();
+                    
+                    // Step 3: Complementary filter - blend gyro and accel
+                    // Alpha stays with gyro (no accel reference for Z rotation)
+                    // Beta and Gamma corrected by accelerometer
+                    this.integratedAngles.beta = this.gyroWeight * this.integratedAngles.beta + 
+                                                  (1 - this.gyroWeight) * accelAngles.beta;
+                    this.integratedAngles.gamma = this.gyroWeight * this.integratedAngles.gamma + 
+                                                   (1 - this.gyroWeight) * accelAngles.gamma;
+                    
+                    // Normalize alpha to 0-360
+                    while (this.integratedAngles.alpha < 0) this.integratedAngles.alpha += 360;
+                    while (this.integratedAngles.alpha >= 360) this.integratedAngles.alpha -= 360;
+                    
+                    // Keep beta and gamma in -180 to 180
+                    this.integratedAngles.beta = this.normalizeAngle(this.integratedAngles.beta);
+                    this.integratedAngles.gamma = this.normalizeAngle(this.integratedAngles.gamma);
+                    
+                    // Update current orientation with fused values
+                    this.current.orientation = {
+                        alpha: this.cleanValue(this.integratedAngles.alpha),
+                        beta: this.cleanValue(this.integratedAngles.beta),
+                        gamma: this.cleanValue(this.integratedAngles.gamma)
+                    };
+                    
+                    // Trigger update with integrated orientation
+                    if (this.onUpdate) {
+                        this.onUpdate(this.getData());
+                    }
+                }
+                this.lastGyroTimestamp = currentTime;
+            }
         }
         
-        // Accelerometer
-        if (event.accelerationIncludingGravity) {
-            this.current.accel = {
-                x: this.cleanValue(event.accelerationIncludingGravity.x),
-                y: this.cleanValue(event.accelerationIncludingGravity.y),
-                z: this.cleanValue(event.accelerationIncludingGravity.z)
-            };
-        }
-        
-        if (this.onUpdate) {
+        // Trigger update for non-MIUI devices
+        if (!this.useGyroIntegration && this.onUpdate) {
             this.onUpdate(this.getData());
         }
+    }
+    
+    /**
+     * Calculate pitch (beta) and roll (gamma) from accelerometer
+     * Uses gravity vector to determine phone tilt - NO DRIFT!
+     */
+    getAccelerometerAngles() {
+        const ax = this.filteredAccel.x;
+        const ay = this.filteredAccel.y;
+        const az = this.filteredAccel.z;
+        
+        // Calculate pitch (rotation around X-axis) - beta
+        // Range: -180 to 180 degrees
+        const pitch = Math.atan2(ay, Math.sqrt(ax * ax + az * az)) * (180 / Math.PI);
+        
+        // Calculate roll (rotation around Y-axis) - gamma
+        // Range: -180 to 180 degrees
+        const roll = Math.atan2(-ax, az) * (180 / Math.PI);
+        
+        return {
+            beta: pitch,
+            gamma: roll,
+            alpha: 0 // Accelerometer can't measure yaw/compass heading
+        };
     }
     
     /**
@@ -232,51 +332,46 @@ class MotionSensor {
                 gammaNull: rawGamma === null,
                 isMIUI: this.isMIUI
             });
-        }
-        
-        // Check if alpha is available
-        if (rawAlpha === null || rawAlpha === undefined) {
-            console.warn('⚠️ Alpha not available on this device! Using fallback.');
-            rawAlpha = this.previousOrientation.alpha || 0;
-        }
-        
-        // Get all three orientation angles (or defaults)
-        let alpha = rawAlpha || 0;
-        let beta = rawBeta || 0;
-        let gamma = rawGamma || 0;
-        
-        // MIUI FIX: Alpha has severe drift on MIUI devices
-        // Detect when device is stationary and lock alpha
-        if (this.isMIUI && this.calibrated) {
-            const betaDiff = Math.abs(beta - this.previousOrientation.beta);
-            const gammaDiff = Math.abs(gamma - this.previousOrientation.gamma);
             
-            // If beta and gamma are stable (device not moving), lock alpha
-            if (betaDiff < 0.1 && gammaDiff < 0.1) {
-                // Device is stationary - keep alpha locked
-                alpha = this.previousOrientation.alpha || 0;
+            // Enable gyroscope integration for MIUI devices
+            if (this.isMIUI) {
+                console.log('🔧 MIUI detected - Using gyroscope integration for orientation');
+                this.useGyroIntegration = true;
             }
         }
         
-        // Handle alpha wraparound (0-360 degrees)
-        let alphaDiff = alpha - this.previousOrientation.alpha;
-        if (alphaDiff > 180) alphaDiff -= 360;
-        if (alphaDiff < -180) alphaDiff += 360;
+        // Use gyroscope integration for MIUI devices
+        if (this.useGyroIntegration) {
+            // Use integrated gyroscope data instead of orientation API
+            alpha = this.integratedAngles.alpha;
+            beta = this.integratedAngles.beta;
+            gamma = this.integratedAngles.gamma;
+        } else {
+            // Use orientation API for non-MIUI devices
+            alpha = rawAlpha || 0;
+            beta = rawBeta || 0;
+            gamma = rawGamma || 0;
+            
+            // Handle alpha wraparound (0-360 degrees)
+            let alphaDiff = alpha - this.previousOrientation.alpha;
+            if (alphaDiff > 180) alphaDiff -= 360;
+            if (alphaDiff < -180) alphaDiff += 360;
+            
+            // Smooth alpha with wraparound handling
+            alpha = this.previousOrientation.alpha + alphaDiff * (1 - this.smoothingFactor);
+            if (alpha < 0) alpha += 360;
+            if (alpha >= 360) alpha -= 360;
+            
+            // Smooth beta and gamma normally
+            beta = this.smoothValue(beta, this.previousOrientation.beta, this.smoothingFactor);
+            gamma = this.smoothValue(gamma, this.previousOrientation.gamma, this.smoothingFactor);
+        }
         
-        // Smooth alpha with wraparound handling
-        let smoothedAlpha = this.previousOrientation.alpha + alphaDiff * (1 - this.smoothingFactor);
-        if (smoothedAlpha < 0) smoothedAlpha += 360;
-        if (smoothedAlpha >= 360) smoothedAlpha -= 360;
-        
-        // Smooth beta and gamma normally
-        beta = this.smoothValue(beta, this.previousOrientation.beta, this.smoothingFactor);
-        gamma = this.smoothValue(gamma, this.previousOrientation.gamma, this.smoothingFactor);
-        
-        this.previousOrientation = { alpha: smoothedAlpha, beta, gamma };
+        this.previousOrientation = { alpha, beta, gamma };
         
         // Store values
         this.current.orientation = {
-            alpha: this.cleanValue(smoothedAlpha),
+            alpha: this.cleanValue(alpha),
             beta: this.cleanValue(beta),
             gamma: this.cleanValue(gamma)
         };
