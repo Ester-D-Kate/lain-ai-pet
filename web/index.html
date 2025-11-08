@@ -418,6 +418,11 @@
             // Update counter for status
             updateCount++;
             
+            // Debug log first few updates
+            if (updateCount <= 5) {
+                console.log('🔍 Update #' + updateCount + ' - Data received:', data);
+            }
+            
             // Update status indicator every 10 updates
             if (motionSensor.isMIUI && updateCount % 10 === 0) {
                 const status = document.getElementById('sensorFusionStatus');

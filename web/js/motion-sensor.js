@@ -283,6 +283,17 @@ class MotionSensor {
                     gamma: this.cleanValue(this.integratedAngles.gamma)
                 };
                 
+                // Debug log every 50 updates
+                if (!this._debugCounter) this._debugCounter = 0;
+                this._debugCounter++;
+                if (this._debugCounter % 50 === 0) {
+                    console.log('📊 Sensor Fusion Update #' + this._debugCounter + ':', {
+                        integrated: this.integratedAngles,
+                        current: this.current.orientation,
+                        accelAngles: accelAngles
+                    });
+                }
+                
                 // Update timestamp for next iteration
                 this.lastGyroTimestamp = currentTime;
                 
