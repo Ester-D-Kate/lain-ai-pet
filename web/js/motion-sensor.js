@@ -23,7 +23,7 @@ class MotionSensor {
         };
         
         // Smoothing filter
-        this.smoothingFactor = 0.8; // Higher = more smoothing
+        this.smoothingFactor = 0.9; // Higher = more smoothing (reduced from 0.8 for stability)
         this.previousOrientation = { alpha: 0, beta: 0, gamma: 0 };
         
         // Callbacks
@@ -148,8 +148,19 @@ class MotionSensor {
         let beta = event.beta || 0;
         let gamma = event.gamma || 0;
         
-        // Apply smoothing to reduce jitter
-        alpha = this.smoothValue(alpha, this.previousOrientation.alpha, this.smoothingFactor);
+        // Handle alpha wraparound (0-360 degrees)
+        // Calculate shortest distance between current and previous alpha
+        let alphaDiff = alpha - this.previousOrientation.alpha;
+        if (alphaDiff > 180) alphaDiff -= 360;
+        if (alphaDiff < -180) alphaDiff += 360;
+        
+        // Apply smoothing with wraparound handling
+        let smoothedAlpha = this.previousOrientation.alpha + alphaDiff * (1 - this.smoothingFactor);
+        // Normalize back to 0-360 range
+        if (smoothedAlpha < 0) smoothedAlpha += 360;
+        if (smoothedAlpha >= 360) smoothedAlpha -= 360;
+        
+        alpha = smoothedAlpha;
         beta = this.smoothValue(beta, this.previousOrientation.beta, this.smoothingFactor);
         gamma = this.smoothValue(gamma, this.previousOrientation.gamma, this.smoothingFactor);
         
@@ -171,7 +182,7 @@ class MotionSensor {
      * Clean value to 1 decimal place, treating values < 0.05 as zero
      */
     cleanValue(value) {
-        if (!value || Math.abs(value) < 0.05) return 0;
+        if (!value || Math.abs(value) < 0.1) return 0; // Increased threshold from 0.05 to 0.1
         return Math.round(value * 10) / 10;
     }
     
@@ -180,11 +191,21 @@ class MotionSensor {
      */
     getRelativeAngles() {
         if (!this.calibrated) {
-            return this.current.orientation;
+            return {
+                alpha: 0,
+                beta: 0,
+                gamma: 0
+            };
         }
         
+        // Calculate relative alpha with proper wraparound handling
+        let relativeAlpha = this.current.orientation.alpha - this.zeroPoint.alpha;
+        
+        // Normalize to -180 to 180 range
+        relativeAlpha = this.normalizeAngle(relativeAlpha);
+        
         return {
-            alpha: this.cleanValue(this.normalizeAngle(this.current.orientation.alpha - this.zeroPoint.alpha)),
+            alpha: this.cleanValue(relativeAlpha),
             beta: this.cleanValue(this.normalizeAngle(this.current.orientation.beta - this.zeroPoint.beta)),
             gamma: this.cleanValue(this.normalizeAngle(this.current.orientation.gamma - this.zeroPoint.gamma))
         };
