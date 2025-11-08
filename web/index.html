@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Lain AI Pet - Mobile Sensors</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #fff;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 2em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .subtitle {
+            text-align: center;
+            margin-bottom: 30px;
+            opacity: 0.9;
+            font-size: 0.9em;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+
+        .card h2 {
+            margin-bottom: 15px;
+            font-size: 1.3em;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+            padding-bottom: 10px;
+        }
+
+        .sensor-data {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin: 15px 0;
+        }
+
+        .sensor-value {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .sensor-value .label {
+            font-size: 0.8em;
+            opacity: 0.8;
+            margin-bottom: 5px;
+        }
+
+        .sensor-value .value {
+            font-size: 1.5em;
+            font-weight: bold;
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            margin: 10px 0;
+            border: none;
+            border-radius: 10px;
+            font-size: 1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        button.primary {
+            background: linear-gradient(135deg, #00d2ff 0%, #3a47d5 100%);
+            color: white;
+        }
+
+        button.success {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+        }
+
+        button.danger {
+            background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
+            color: white;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        button:active:not(:disabled) {
+            transform: scale(0.98);
+        }
+
+        video {
+            width: 100%;
+            border-radius: 10px;
+            margin-top: 10px;
+            display: none;
+        }
+
+        video.active {
+            display: block;
+        }
+
+        .status {
+            padding: 10px;
+            border-radius: 8px;
+            margin: 10px 0;
+            font-size: 0.9em;
+        }
+
+        .status.success {
+            background: rgba(56, 239, 125, 0.2);
+            border: 1px solid rgba(56, 239, 125, 0.5);
+        }
+
+        .status.error {
+            background: rgba(244, 92, 67, 0.2);
+            border: 1px solid rgba(244, 92, 67, 0.5);
+        }
+
+        .status.info {
+            background: rgba(0, 210, 255, 0.2);
+            border: 1px solid rgba(0, 210, 255, 0.5);
+        }
+
+        .audio-visualizer {
+            width: 100%;
+            height: 100px;
+            border-radius: 8px;
+            margin-top: 10px;
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        .orientation-visual {
+            width: 100%;
+            height: 200px;
+            position: relative;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            overflow: hidden;
+            margin-top: 15px;
+        }
+
+        .device-cube {
+            width: 100px;
+            height: 100px;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform-style: preserve-3d;
+            transition: transform 0.1s;
+        }
+
+        .cube-face {
+            position: absolute;
+            width: 100px;
+            height: 100px;
+            border: 2px solid rgba(255, 255, 255, 0.8);
+            background: rgba(255, 255, 255, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 15px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-item .stat-value {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #00d2ff;
+        }
+
+        .stat-item .stat-label {
+            font-size: 0.8em;
+            opacity: 0.8;
+            margin-top: 5px;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 Lain AI Pet</h1>
+        <p class="subtitle">Mobile Sensor Dashboard</p>
+
+        <!-- Gyroscope & Accelerometer -->
+        <div class="card">
+            <h2>📱 Motion Sensors</h2>
+            <div id="motionStatus" class="status info">
+                Tap "Start Motion Sensors" to begin
+            </div>
+            <button id="startMotion" class="primary">Start Motion Sensors</button>
+            <button id="stopMotion" class="danger hidden">Stop Motion Sensors</button>
+            
+            <div id="motionData" class="hidden">
+                <h3 style="margin-top: 20px;">Gyroscope (rotation rate °/s)</h3>
+                <div class="sensor-data">
+                    <div class="sensor-value">
+                        <div class="label">Alpha (Z)</div>
+                        <div class="value" id="gyroAlpha">0</div>
+                    </div>
+                    <div class="sensor-value">
+                        <div class="label">Beta (X)</div>
+                        <div class="value" id="gyroBeta">0</div>
+                    </div>
+                    <div class="sensor-value">
+                        <div class="label">Gamma (Y)</div>
+                        <div class="value" id="gyroGamma">0</div>
+                    </div>
+                </div>
+
+                <h3 style="margin-top: 20px;">Accelerometer (m/s²)</h3>
+                <div class="sensor-data">
+                    <div class="sensor-value">
+                        <div class="label">X</div>
+                        <div class="value" id="accelX">0</div>
+                    </div>
+                    <div class="sensor-value">
+                        <div class="label">Y</div>
+                        <div class="value" id="accelY">0</div>
+                    </div>
+                    <div class="sensor-value">
+                        <div class="label">Z</div>
+                        <div class="value" id="accelZ">0</div>
+                    </div>
+                </div>
+
+                <h3 style="margin-top: 20px;">Orientation (degrees)</h3>
+                <div class="sensor-data">
+                    <div class="sensor-value">
+                        <div class="label">Alpha</div>
+                        <div class="value" id="orientAlpha">0</div>
+                    </div>
+                    <div class="sensor-value">
+                        <div class="label">Beta</div>
+                        <div class="value" id="orientBeta">0</div>
+                    </div>
+                    <div class="sensor-value">
+                        <div class="label">Gamma</div>
+                        <div class="value" id="orientGamma">0</div>
+                    </div>
+                </div>
+
+                <div class="orientation-visual">
+                    <div id="deviceCube" class="device-cube"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Camera -->
+        <div class="card">
+            <h2>📷 Camera</h2>
+            <div id="cameraStatus" class="status info">
+                Camera not started
+            </div>
+            <button id="startCamera" class="primary">Start Camera</button>
+            <button id="switchCamera" class="success hidden">Switch Camera</button>
+            <button id="stopCamera" class="danger hidden">Stop Camera</button>
+            <video id="cameraVideo" autoplay playsinline></video>
+        </div>
+
+        <!-- Microphone -->
+        <div class="card">
+            <h2>🎤 Microphone</h2>
+            <div id="micStatus" class="status info">
+                Microphone not started
+            </div>
+            <button id="startMic" class="primary">Start Microphone</button>
+            <button id="stopMic" class="danger hidden">Stop Microphone</button>
+            <canvas id="audioVisualizer" class="audio-visualizer hidden"></canvas>
+            <div id="audioStats" class="stats hidden">
+                <div class="stat-item">
+                    <div class="stat-value" id="volumeLevel">0</div>
+                    <div class="stat-label">Volume</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="frequency">0</div>
+                    <div class="stat-label">Hz</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Audio Output -->
+        <div class="card">
+            <h2>🔊 Speaker Test</h2>
+            <button id="testSpeaker" class="success">Play Test Sound</button>
+            <div class="status info" style="margin-top: 10px;">
+                Click to test audio output
+            </div>
+        </div>
+
+        <!-- Data Export -->
+        <div class="card">
+            <h2>💾 Export Data</h2>
+            <button id="exportData" class="primary">Download Sensor Data (JSON)</button>
+            <div id="exportStatus" class="status info" style="margin-top: 10px;">
+                Sensor data will be exported as JSON
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let motionActive = false;
+        let cameraActive = false;
+        let micActive = false;
+        let currentCameraFacing = 'user';
+        let cameraStream = null;
+        let audioStream = null;
+        let audioContext = null;
+        let analyser = null;
+        let sensorData = {
+            gyroscope: [],
+            accelerometer: [],
+            orientation: [],
+            timestamps: []
+        };
+
+        // Motion Sensors
+        const startMotionBtn = document.getElementById('startMotion');
+        const stopMotionBtn = document.getElementById('stopMotion');
+        const motionStatus = document.getElementById('motionStatus');
+        const motionData = document.getElementById('motionData');
+
+        startMotionBtn.addEventListener('click', async () => {
+            try {
+                // Request permission for iOS 13+
+                if (typeof DeviceMotionEvent.requestPermission === 'function') {
+                    const permission = await DeviceMotionEvent.requestPermission();
+                    if (permission !== 'granted') {
+                        throw new Error('Motion permission denied');
+                    }
+                }
+
+                window.addEventListener('devicemotion', handleMotion);
+                window.addEventListener('deviceorientation', handleOrientation);
+                
+                motionActive = true;
+                motionStatus.className = 'status success';
+                motionStatus.textContent = '✅ Motion sensors active';
+                startMotionBtn.classList.add('hidden');
+                stopMotionBtn.classList.remove('hidden');
+                motionData.classList.remove('hidden');
+            } catch (error) {
+                motionStatus.className = 'status error';
+                motionStatus.textContent = `❌ Error: ${error.message}`;
+            }
+        });
+
+        stopMotionBtn.addEventListener('click', () => {
+            window.removeEventListener('devicemotion', handleMotion);
+            window.removeEventListener('deviceorientation', handleOrientation);
+            motionActive = false;
+            motionStatus.className = 'status info';
+            motionStatus.textContent = 'Motion sensors stopped';
+            startMotionBtn.classList.remove('hidden');
+            stopMotionBtn.classList.add('hidden');
+        });
+
+        function handleMotion(event) {
+            // Gyroscope
+            if (event.rotationRate) {
+                document.getElementById('gyroAlpha').textContent = 
+                    (event.rotationRate.alpha || 0).toFixed(1);
+                document.getElementById('gyroBeta').textContent = 
+                    (event.rotationRate.beta || 0).toFixed(1);
+                document.getElementById('gyroGamma').textContent = 
+                    (event.rotationRate.gamma || 0).toFixed(1);
+            }
+
+            // Accelerometer
+            if (event.accelerationIncludingGravity) {
+                const x = (event.accelerationIncludingGravity.x || 0).toFixed(2);
+                const y = (event.accelerationIncludingGravity.y || 0).toFixed(2);
+                const z = (event.accelerationIncludingGravity.z || 0).toFixed(2);
+                
+                document.getElementById('accelX').textContent = x;
+                document.getElementById('accelY').textContent = y;
+                document.getElementById('accelZ').textContent = z;
+
+                // Store data
+                sensorData.accelerometer.push({ x, y, z });
+                sensorData.timestamps.push(Date.now());
+            }
+        }
+
+        function handleOrientation(event) {
+            const alpha = (event.alpha || 0).toFixed(1);
+            const beta = (event.beta || 0).toFixed(1);
+            const gamma = (event.gamma || 0).toFixed(1);
+
+            document.getElementById('orientAlpha').textContent = alpha;
+            document.getElementById('orientBeta').textContent = beta;
+            document.getElementById('orientGamma').textContent = gamma;
+
+            // Update visual cube
+            const cube = document.getElementById('deviceCube');
+            cube.style.transform = `
+                translateX(-50%) translateY(-50%)
+                rotateX(${beta}deg) 
+                rotateY(${gamma}deg) 
+                rotateZ(${alpha}deg)
+            `;
+
+            // Store data
+            sensorData.orientation.push({ alpha, beta, gamma });
+        }
+
+        // Camera
+        const startCameraBtn = document.getElementById('startCamera');
+        const switchCameraBtn = document.getElementById('switchCamera');
+        const stopCameraBtn = document.getElementById('stopCamera');
+        const cameraVideo = document.getElementById('cameraVideo');
+        const cameraStatus = document.getElementById('cameraStatus');
+
+        startCameraBtn.addEventListener('click', async () => {
+            try {
+                await startCamera();
+            } catch (error) {
+                cameraStatus.className = 'status error';
+                cameraStatus.textContent = `❌ Error: ${error.message}`;
+            }
+        });
+
+        switchCameraBtn.addEventListener('click', async () => {
+            currentCameraFacing = currentCameraFacing === 'user' ? 'environment' : 'user';
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(track => track.stop());
+            }
+            await startCamera();
+        });
+
+        stopCameraBtn.addEventListener('click', () => {
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(track => track.stop());
+                cameraVideo.srcObject = null;
+                cameraVideo.classList.remove('active');
+                cameraActive = false;
+                cameraStatus.className = 'status info';
+                cameraStatus.textContent = 'Camera stopped';
+                startCameraBtn.classList.remove('hidden');
+                switchCameraBtn.classList.add('hidden');
+                stopCameraBtn.classList.add('hidden');
+            }
+        });
+
+        async function startCamera() {
+            const constraints = {
+                video: {
+                    facingMode: currentCameraFacing,
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                }
+            };
+
+            cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+            cameraVideo.srcObject = cameraStream;
+            cameraVideo.classList.add('active');
+            cameraActive = true;
+            cameraStatus.className = 'status success';
+            cameraStatus.textContent = `✅ Camera active (${currentCameraFacing === 'user' ? 'Front' : 'Back'})`;
+            startCameraBtn.classList.add('hidden');
+            switchCameraBtn.classList.remove('hidden');
+            stopCameraBtn.classList.remove('hidden');
+        }
+
+        // Microphone
+        const startMicBtn = document.getElementById('startMic');
+        const stopMicBtn = document.getElementById('stopMic');
+        const micStatus = document.getElementById('micStatus');
+        const audioVisualizer = document.getElementById('audioVisualizer');
+        const audioStats = document.getElementById('audioStats');
+
+        startMicBtn.addEventListener('click', async () => {
+            try {
+                audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                const source = audioContext.createMediaStreamSource(audioStream);
+                source.connect(analyser);
+                analyser.fftSize = 256;
+
+                micActive = true;
+                micStatus.className = 'status success';
+                micStatus.textContent = '✅ Microphone active';
+                startMicBtn.classList.add('hidden');
+                stopMicBtn.classList.remove('hidden');
+                audioVisualizer.classList.remove('hidden');
+                audioStats.classList.remove('hidden');
+
+                visualizeAudio();
+            } catch (error) {
+                micStatus.className = 'status error';
+                micStatus.textContent = `❌ Error: ${error.message}`;
+            }
+        });
+
+        stopMicBtn.addEventListener('click', () => {
+            if (audioStream) {
+                audioStream.getTracks().forEach(track => track.stop());
+            }
+            if (audioContext) {
+                audioContext.close();
+            }
+            micActive = false;
+            micStatus.className = 'status info';
+            micStatus.textContent = 'Microphone stopped';
+            startMicBtn.classList.remove('hidden');
+            stopMicBtn.classList.add('hidden');
+            audioVisualizer.classList.add('hidden');
+            audioStats.classList.add('hidden');
+        });
+
+        function visualizeAudio() {
+            if (!micActive) return;
+
+            const canvas = audioVisualizer;
+            const ctx = canvas.getContext('2d');
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+
+            canvas.width = canvas.offsetWidth;
+            canvas.height = canvas.offsetHeight;
+
+            function draw() {
+                if (!micActive) return;
+                requestAnimationFrame(draw);
+
+                analyser.getByteFrequencyData(dataArray);
+
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                const barWidth = (canvas.width / bufferLength) * 2.5;
+                let x = 0;
+
+                let sum = 0;
+                for (let i = 0; i < bufferLength; i++) {
+                    const barHeight = (dataArray[i] / 255) * canvas.height;
+                    
+                    const r = barHeight + 25 * (i / bufferLength);
+                    const g = 250 * (i / bufferLength);
+                    const b = 50;
+
+                    ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+                    ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+
+                    x += barWidth + 1;
+                    sum += dataArray[i];
+                }
+
+                // Update stats
+                const avgVolume = Math.round(sum / bufferLength);
+                document.getElementById('volumeLevel').textContent = avgVolume;
+                
+                // Find dominant frequency
+                let maxIndex = 0;
+                let maxValue = 0;
+                for (let i = 0; i < bufferLength; i++) {
+                    if (dataArray[i] > maxValue) {
+                        maxValue = dataArray[i];
+                        maxIndex = i;
+                    }
+                }
+                const frequency = Math.round(maxIndex * audioContext.sampleRate / analyser.fftSize);
+                document.getElementById('frequency').textContent = frequency;
+            }
+
+            draw();
+        }
+
+        // Speaker Test
+        const testSpeakerBtn = document.getElementById('testSpeaker');
+        testSpeakerBtn.addEventListener('click', () => {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            oscillator.frequency.value = 440; // A4 note
+            oscillator.type = 'sine';
+
+            gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+
+            oscillator.start(audioCtx.currentTime);
+            oscillator.stop(audioCtx.currentTime + 0.5);
+        });
+
+        // Export Data
+        const exportDataBtn = document.getElementById('exportData');
+        const exportStatus = document.getElementById('exportStatus');
+
+        exportDataBtn.addEventListener('click', () => {
+            const data = {
+                timestamp: new Date().toISOString(),
+                sensorData: sensorData,
+                deviceInfo: {
+                    userAgent: navigator.userAgent,
+                    platform: navigator.platform,
+                    screenWidth: window.screen.width,
+                    screenHeight: window.screen.height
+                }
+            };
+
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `lain-sensor-data-${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+
+            exportStatus.className = 'status success';
+            exportStatus.textContent = '✅ Data exported successfully!';
+            setTimeout(() => {
+                exportStatus.className = 'status info';
+                exportStatus.textContent = 'Sensor data will be exported as JSON';
+            }, 3000);
+        });
+
+        // Prevent sleep on mobile
+        let wakeLock = null;
+        async function requestWakeLock() {
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                }
+            } catch (err) {
+                console.log('Wake Lock error:', err);
+            }
+        }
+        requestWakeLock();
+    </script>
+</body>
+</html>
