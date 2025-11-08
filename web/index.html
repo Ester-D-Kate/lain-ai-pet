@@ -234,6 +234,9 @@
             <div id="motionStatus" class="status info">
                 Tap "Start Motion Sensors" to begin
             </div>
+            <div id="deviceInfo" class="status info" style="font-size: 0.8em; margin-top: 5px;">
+                Detecting device...
+            </div>
             <button id="startMotion" class="primary">Start Motion Sensors</button>
             <button id="stopMotion" class="danger hidden">Stop Motion Sensors</button>
             <button id="calibrateMotion" class="success hidden">Recalibrate (Set as Zero)</button>
@@ -360,6 +363,10 @@
             orientation: [],
             timestamps: []
         };
+
+        // Display device info
+        const deviceInfo = document.getElementById('deviceInfo');
+        deviceInfo.textContent = `Device: ${motionSensor.isMIUI ? 'Xiaomi/Mi' : motionSensor.isAndroid ? 'Android' : motionSensor.isIOS ? 'iOS' : 'Unknown'} | Browser: ${navigator.userAgent.split(' ').pop()}`;
 
         // ===== MOTION SENSORS =====
         const startMotionBtn = document.getElementById('startMotion');

@@ -8,6 +8,18 @@ class MotionSensor {
         this.isActive = false;
         this.calibrated = false;
         
+        // Device detection
+        this.isMIUI = /MIUI|Xiaomi|Redmi|MI/i.test(navigator.userAgent);
+        this.isAndroid = /Android/i.test(navigator.userAgent);
+        this.isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+        
+        console.log('Device detected:', {
+            MIUI: this.isMIUI,
+            Android: this.isAndroid,
+            iOS: this.isIOS,
+            UA: navigator.userAgent
+        });
+        
         // Zero reference points (calibration)
         this.zeroPoint = {
             alpha: 0,
@@ -28,12 +40,16 @@ class MotionSensor {
             orientation: { alpha: 0, beta: 0, gamma: 0 }
         };
         
-        // Smoothing filter for orientation
-        this.smoothingFactor = 0.85; // Balanced smoothing
+        // Smoothing - lighter for Xiaomi phones
+        this.smoothingFactor = this.isMIUI ? 0.7 : 0.85;
         this.previousOrientation = { alpha: 0, beta: 0, gamma: 0 };
         
-        // Drift compensation threshold (ignore very small rotation rates)
-        this.driftThreshold = 0.15; // degrees per second
+        // Drift compensation - stricter for Xiaomi
+        this.driftThreshold = this.isMIUI ? 0.2 : 0.15;
+        
+        // Track if we're getting gyro data
+        this.hasGyroData = false;
+        this.hasOrientationData = false;
         
         // Callbacks
         this.onUpdate = null;
@@ -49,8 +65,11 @@ class MotionSensor {
      */
     async start() {
         try {
+            console.log('Starting motion sensors...');
+            
             // Request permission for iOS 13+
             if (typeof DeviceMotionEvent.requestPermission === 'function') {
+                console.log('Requesting iOS motion permission...');
                 const motionPermission = await DeviceMotionEvent.requestPermission();
                 if (motionPermission !== 'granted') {
                     throw new Error('Motion permission denied');
@@ -58,10 +77,30 @@ class MotionSensor {
             }
             
             if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                console.log('Requesting iOS orientation permission...');
                 const orientationPermission = await DeviceOrientationEvent.requestPermission();
                 if (orientationPermission !== 'granted') {
                     throw new Error('Orientation permission denied');
                 }
+            }
+            
+            // For Android/MIUI - check if sensors are available
+            if (this.isAndroid || this.isMIUI) {
+                console.log('Android/MIUI detected - checking sensor availability...');
+                
+                // Test if DeviceMotionEvent fires
+                const motionTest = new Promise((resolve) => {
+                    const timeout = setTimeout(() => resolve(false), 1000);
+                    const handler = () => {
+                        clearTimeout(timeout);
+                        window.removeEventListener('devicemotion', handler);
+                        resolve(true);
+                    };
+                    window.addEventListener('devicemotion', handler);
+                });
+                
+                const hasMotion = await motionTest;
+                console.log('Motion sensor available:', hasMotion);
             }
             
             window.addEventListener('devicemotion', this.handleMotion);
@@ -69,11 +108,20 @@ class MotionSensor {
             
             this.isActive = true;
             
-            // Auto-calibrate after 500ms
-            setTimeout(() => this.calibrate(), 500);
+            // Auto-calibrate after 1 second (longer for MIUI)
+            const calibrationDelay = this.isMIUI ? 1000 : 500;
+            setTimeout(() => {
+                if (this.hasOrientationData || this.hasGyroData) {
+                    this.calibrate();
+                    console.log('Auto-calibration complete');
+                } else {
+                    console.warn('No sensor data received yet');
+                }
+            }, calibrationDelay);
             
             return { success: true, message: 'Motion sensors started' };
         } catch (error) {
+            console.error('Sensor start error:', error);
             if (this.onError) this.onError(error);
             return { success: false, message: error.message };
         }
@@ -130,6 +178,7 @@ class MotionSensor {
     handleMotion(event) {
         if (!this.isActive) return;
         
+        this.hasGyroData = true;
         const currentTime = Date.now();
         
         // Gyroscope (rotation rate in degrees/second)
@@ -137,6 +186,11 @@ class MotionSensor {
             const rawAlpha = event.rotationRate.alpha || 0;
             const rawBeta = event.rotationRate.beta || 0;
             const rawGamma = event.rotationRate.gamma || 0;
+            
+            // Log first gyro reading for debugging
+            if (!this.hasGyroData) {
+                console.log('First gyro reading:', { rawAlpha, rawBeta, rawGamma });
+            }
             
             // Apply drift threshold - ignore tiny movements
             const alpha = Math.abs(rawAlpha) > this.driftThreshold ? rawAlpha : 0;
@@ -183,6 +237,17 @@ class MotionSensor {
     handleOrientation(event) {
         if (!this.isActive) return;
         
+        this.hasOrientationData = true;
+        
+        // Log first orientation reading for debugging
+        if (!this.previousOrientation.beta && !this.previousOrientation.gamma) {
+            console.log('First orientation reading:', {
+                alpha: event.alpha,
+                beta: event.beta,
+                gamma: event.gamma
+            });
+        }
+        
         // We only use beta and gamma from orientation API (tilt angles)
         // Alpha comes from gyroscope integration
         let beta = event.beta || 0;
@@ -200,6 +265,11 @@ class MotionSensor {
             beta: this.cleanValue(beta),
             gamma: this.cleanValue(gamma)
         };
+        
+        // Trigger update even without motion event (important for MIUI)
+        if (this.onUpdate && this.calibrated) {
+            this.onUpdate(this.getData());
+        }
     }
     
     /**
