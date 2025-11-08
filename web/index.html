@@ -238,7 +238,11 @@
                 Detecting device...
             </div>
             <div id="miuiWarning" style="display: none; background: #4CAF50; color: white; padding: 10px; margin: 10px 0; border-radius: 8px; font-size: 0.85em;">
-                ✅ MIUI Device: Using gyroscope integration for accurate orientation!
+                ✅ <strong>MIUI Sensor Fusion Active!</strong><br>
+                Using Gyroscope + Accelerometer complementary filter for drift-free orientation
+            </div>
+            <div id="sensorFusionStatus" style="display: none; background: #2196F3; color: white; padding: 8px; margin: 10px 0; border-radius: 5px; font-size: 0.8em; text-align: center;">
+                🔄 Updating...
             </div>
             <button id="startMotion" class="primary">Start Motion Sensors</button>
             <button id="stopMotion" class="danger hidden">Stop Motion Sensors</button>
@@ -386,11 +390,13 @@
         // Display device info
         const deviceInfo = document.getElementById('deviceInfo');
         const miuiWarning = document.getElementById('miuiWarning');
+        const sensorFusionStatus = document.getElementById('sensorFusionStatus');
         deviceInfo.textContent = `Device: ${motionSensor.isMIUI ? 'Xiaomi/Mi' : motionSensor.isAndroid ? 'Android' : motionSensor.isIOS ? 'iOS' : 'Unknown'} | Browser: ${navigator.userAgent.split(' ').pop()}`;
         
         // Show warning for MIUI devices
         if (motionSensor.isMIUI) {
             miuiWarning.style.display = 'block';
+            sensorFusionStatus.style.display = 'block';
         }
 
         // ===== MOTION SENSORS =====
@@ -401,7 +407,20 @@
         const motionData = document.getElementById('motionData');
 
         // Motion sensor callbacks
+        let updateCount = 0;
         motionSensor.onUpdate = (data) => {
+            // Update counter for status
+            updateCount++;
+            
+            // Update status indicator every 10 updates
+            if (motionSensor.isMIUI && updateCount % 10 === 0) {
+                const status = document.getElementById('sensorFusionStatus');
+                if (status) {
+                    status.textContent = `🔄 Sensor Fusion: ${updateCount} updates | Gyro: ${data.gyro.alpha.toFixed(1)}°/s`;
+                    status.style.background = '#4CAF50';
+                }
+            }
+            
             // Update gyroscope
             document.getElementById('gyroAlpha').textContent = data.gyro.alpha.toFixed(1);
             document.getElementById('gyroBeta').textContent = data.gyro.beta.toFixed(1);

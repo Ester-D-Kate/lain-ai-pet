@@ -273,8 +273,17 @@ class MotionSensor {
                     if (this.onUpdate) {
                         this.onUpdate(this.getData());
                     }
+                } else {
+                    // First gyro reading - initialize
+                    console.log('🎯 Sensor fusion first reading - initializing timestamp');
                 }
                 this.lastGyroTimestamp = currentTime;
+            } else if (this.useGyroIntegration && !this.calibrated) {
+                // Waiting for calibration
+                if (!this._loggedWaiting) {
+                    console.log('⏳ Waiting for calibration to start sensor fusion...');
+                    this._loggedWaiting = true;
+                }
             }
         }
         
