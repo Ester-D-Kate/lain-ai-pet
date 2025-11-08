@@ -85,6 +85,10 @@
             font-weight: bold;
         }
 
+        .sensor-value.full {
+            grid-column: span 3;
+        }
+
         button {
             width: 100%;
             padding: 15px;
@@ -308,6 +312,30 @@
                     </div>
                 </div>
 
+                <h3 style="margin-top: 20px;">Magnetometer (heading °)</h3>
+                <div class="sensor-data">
+                    <div class="sensor-value full">
+                        <div class="label">Heading</div>
+                        <div class="value" id="magHeading">N/A</div>
+                    </div>
+                </div>
+
+                <h3 style="margin-top: 20px;">Orientation - Device API (raw)</h3>
+                <div class="sensor-data">
+                    <div class="sensor-value">
+                        <div class="label">Alpha</div>
+                        <div class="value" id="apiAlpha">0.0</div>
+                    </div>
+                    <div class="sensor-value">
+                        <div class="label">Beta</div>
+                        <div class="value" id="apiBeta">0.0</div>
+                    </div>
+                    <div class="sensor-value">
+                        <div class="label">Gamma</div>
+                        <div class="value" id="apiGamma">0.0</div>
+                    </div>
+                </div>
+
                 <h3 style="margin-top: 20px;">Debug - Absolute Values</h3>
                 <div class="sensor-data">
                     <div class="sensor-value">
@@ -395,6 +423,8 @@
             gyroscope: [],
             accelerometer: [],
             orientation: [],
+            orientationApi: [],
+            magnetometer: [],
             timestamps: []
         };
 
@@ -490,6 +520,23 @@
             document.getElementById('absBeta').textContent = absBetaVal;
             document.getElementById('absGamma').textContent = absGammaVal;
 
+            // Update magnetometer heading when available
+            const magnetometer = data.magnetometer || { available: false };
+            const magHeadingEl = document.getElementById('magHeading');
+            if (magnetometer.available && Number.isFinite(magnetometer.heading)) {
+                magHeadingEl.textContent = magnetometer.heading.toFixed(1);
+                magHeadingEl.style.opacity = '1';
+            } else {
+                magHeadingEl.textContent = 'N/A';
+                magHeadingEl.style.opacity = '0.6';
+            }
+
+            // Display raw orientation from DeviceOrientation API
+            const apiOrientation = data.orientation.api || { alpha: 0, beta: 0, gamma: 0 };
+            document.getElementById('apiAlpha').textContent = apiOrientation.alpha.toFixed(1);
+            document.getElementById('apiBeta').textContent = apiOrientation.beta.toFixed(1);
+            document.getElementById('apiGamma').textContent = apiOrientation.gamma.toFixed(1);
+
             // Update visual cube with relative angles
             const cube = document.getElementById('deviceCube');
             cube.style.transform = `
@@ -500,8 +547,11 @@
             `;
 
             // Store data
-            sensorData.accelerometer.push(data.accel);
-            sensorData.orientation.push(relative);
+            sensorData.gyroscope.push({ ...data.gyro });
+            sensorData.accelerometer.push({ ...data.accel });
+            sensorData.orientation.push({ ...relative });
+            sensorData.orientationApi.push({ ...apiOrientation });
+            sensorData.magnetometer.push({ ...magnetometer });
             sensorData.timestamps.push(Date.now());
         };
 
