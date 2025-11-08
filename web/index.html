@@ -233,6 +233,11 @@
             📡 VERSION 2.0 - SENSOR FUSION ACTIVE 📡<br>
             <span style="font-size: 0.85em; font-weight: normal;">Gyroscope Integration + Accelerometer Correction</span>
         </div>
+        
+        <!-- BIG LIVE TEST DISPLAY -->
+        <div id="liveTest" style="background: #FF5722; color: white; padding: 20px; margin: 20px 0; border-radius: 10px; text-align: center; font-size: 1.5em; font-weight: bold; border: 3px solid white; display: none;">
+            🔴 LIVE: α=<span id="testAlpha">0</span>° β=<span id="testBeta">0</span>° γ=<span id="testGamma">0</span>°
+        </div>
 
         <!-- Gyroscope & Accelerometer -->
         <div class="card">
@@ -418,6 +423,15 @@
             // Update counter for status
             updateCount++;
             
+            // Show live test display
+            const liveTest = document.getElementById('liveTest');
+            if (liveTest && data.calibrated) {
+                liveTest.style.display = 'block';
+                document.getElementById('testAlpha').textContent = data.orientation.absolute.alpha.toFixed(1);
+                document.getElementById('testBeta').textContent = data.orientation.absolute.beta.toFixed(1);
+                document.getElementById('testGamma').textContent = data.orientation.absolute.gamma.toFixed(1);
+            }
+            
             // Debug log first few updates
             if (updateCount <= 5) {
                 console.log('🔍 Update #' + updateCount + ' - Data received:', data);
@@ -446,16 +460,35 @@
             document.getElementById('accelY').textContent = data.accel.y.toFixed(1);
             document.getElementById('accelZ').textContent = data.accel.z.toFixed(1);
 
-            // Update absolute orientation values (for debugging)
-            document.getElementById('absAlpha').textContent = data.orientation.absolute.alpha.toFixed(1);
-            document.getElementById('absBeta').textContent = data.orientation.absolute.beta.toFixed(1);
-            document.getElementById('absGamma').textContent = data.orientation.absolute.gamma.toFixed(1);
-
             // Update orientation (relative to zero point)
             const relative = data.orientation.relative;
-            document.getElementById('orientAlpha').textContent = relative.alpha.toFixed(1);
-            document.getElementById('orientBeta').textContent = relative.beta.toFixed(1);
-            document.getElementById('orientGamma').textContent = relative.gamma.toFixed(1);
+            
+            // FORCE UPDATE WITH LOGGING
+            const alphaVal = relative.alpha.toFixed(1);
+            const betaVal = relative.beta.toFixed(1);
+            const gammaVal = relative.gamma.toFixed(1);
+            
+            if (updateCount <= 5 || updateCount % 50 === 0) {
+                console.log('🎯 UPDATING ORIENTATION DISPLAY:', {
+                    alpha: alphaVal,
+                    beta: betaVal,
+                    gamma: gammaVal,
+                    calibrated: data.calibrated
+                });
+            }
+            
+            document.getElementById('orientAlpha').textContent = alphaVal;
+            document.getElementById('orientBeta').textContent = betaVal;
+            document.getElementById('orientGamma').textContent = gammaVal;
+            
+            // Update absolute orientation values (for debugging)
+            const absAlphaVal = data.orientation.absolute.alpha.toFixed(1);
+            const absBetaVal = data.orientation.absolute.beta.toFixed(1);
+            const absGammaVal = data.orientation.absolute.gamma.toFixed(1);
+            
+            document.getElementById('absAlpha').textContent = absAlphaVal;
+            document.getElementById('absBeta').textContent = absBetaVal;
+            document.getElementById('absGamma').textContent = absGammaVal;
 
             // Update visual cube with relative angles
             const cube = document.getElementById('deviceCube');
