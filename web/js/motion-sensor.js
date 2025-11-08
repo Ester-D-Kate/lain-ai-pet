@@ -151,13 +151,27 @@ class MotionSensor {
             // Initialize accelerometer filter with current values
             if (this.hasAccelData) {
                 this.filteredAccel = { ...this.current.accel };
+                
+                // Initialize orientation from accelerometer
+                const accelAngles = this.getAccelerometerAngles();
+                this.integratedAngles = { 
+                    alpha: 0,  // Can't get from accel
+                    beta: accelAngles.beta, 
+                    gamma: accelAngles.gamma 
+                };
+                
+                this.current.orientation = {
+                    alpha: 0,
+                    beta: this.cleanValue(this.integratedAngles.beta),
+                    gamma: this.cleanValue(this.integratedAngles.gamma)
+                };
+                
+                console.log('🔧 Sensor fusion initialized with accel angles:', accelAngles);
             }
             
-            // Reset integrated angles to zero for MIUI
-            this.integratedAngles = { alpha: 0, beta: 0, gamma: 0 };
-            this.lastGyroTimestamp = null;
-            this.current.orientation = { alpha: 0, beta: 0, gamma: 0 };
-            console.log('🔧 Sensor fusion initialized - Gyro + Accel complementary filter');
+            // Reset timestamp to start integration
+            this.lastGyroTimestamp = Date.now();
+            console.log('🔧 Gyro integration ready - timestamp set');
         }
         
         // Store current orientation as zero reference for all axes
@@ -168,7 +182,8 @@ class MotionSensor {
         };
         
         this.calibrated = true;
-        console.log('Motion sensor calibrated - zero point:', this.zeroPoint);
+        console.log('✅ Motion sensor calibrated - zero point:', this.zeroPoint);
+        console.log('📊 Current orientation:', this.current.orientation);
     }
     
     /**
@@ -235,54 +250,57 @@ class MotionSensor {
             
             // SENSOR FUSION: Gyroscope integration + Accelerometer correction
             if (this.useGyroIntegration && this.calibrated && this.hasAccelData) {
-                if (this.lastGyroTimestamp !== null) {
-                    const dt = (currentTime - this.lastGyroTimestamp) / 1000; // seconds
-                    
-                    // Step 1: Integrate gyroscope (primary orientation source)
-                    this.integratedAngles.alpha += rawAlpha * dt;
-                    this.integratedAngles.beta += rawBeta * dt;
-                    this.integratedAngles.gamma += rawGamma * dt;
-                    
-                    // Step 2: Calculate orientation from accelerometer (drift correction)
-                    const accelAngles = this.getAccelerometerAngles();
-                    
-                    // Step 3: Complementary filter - blend gyro and accel
-                    // Alpha stays with gyro (no accel reference for Z rotation)
-                    // Beta and Gamma corrected by accelerometer
-                    this.integratedAngles.beta = this.gyroWeight * this.integratedAngles.beta + 
-                                                  (1 - this.gyroWeight) * accelAngles.beta;
-                    this.integratedAngles.gamma = this.gyroWeight * this.integratedAngles.gamma + 
-                                                   (1 - this.gyroWeight) * accelAngles.gamma;
-                    
-                    // Normalize alpha to 0-360
-                    while (this.integratedAngles.alpha < 0) this.integratedAngles.alpha += 360;
-                    while (this.integratedAngles.alpha >= 360) this.integratedAngles.alpha -= 360;
-                    
-                    // Keep beta and gamma in -180 to 180
-                    this.integratedAngles.beta = this.normalizeAngle(this.integratedAngles.beta);
-                    this.integratedAngles.gamma = this.normalizeAngle(this.integratedAngles.gamma);
-                    
-                    // Update current orientation with fused values
-                    this.current.orientation = {
-                        alpha: this.cleanValue(this.integratedAngles.alpha),
-                        beta: this.cleanValue(this.integratedAngles.beta),
-                        gamma: this.cleanValue(this.integratedAngles.gamma)
-                    };
-                    
-                    // Trigger update with integrated orientation
-                    if (this.onUpdate) {
-                        this.onUpdate(this.getData());
-                    }
-                } else {
-                    // First gyro reading - initialize
-                    console.log('🎯 Sensor fusion first reading - initializing timestamp');
-                }
+                const dt = (currentTime - this.lastGyroTimestamp) / 1000; // seconds
+                
+                // Step 1: Integrate gyroscope (primary orientation source)
+                this.integratedAngles.alpha += rawAlpha * dt;
+                this.integratedAngles.beta += rawBeta * dt;
+                this.integratedAngles.gamma += rawGamma * dt;
+                
+                // Step 2: Calculate orientation from accelerometer (drift correction)
+                const accelAngles = this.getAccelerometerAngles();
+                
+                // Step 3: Complementary filter - blend gyro and accel
+                // Alpha stays with gyro (no accel reference for Z rotation)
+                // Beta and Gamma corrected by accelerometer
+                this.integratedAngles.beta = this.gyroWeight * this.integratedAngles.beta + 
+                                              (1 - this.gyroWeight) * accelAngles.beta;
+                this.integratedAngles.gamma = this.gyroWeight * this.integratedAngles.gamma + 
+                                               (1 - this.gyroWeight) * accelAngles.gamma;
+                
+                // Normalize alpha to 0-360
+                while (this.integratedAngles.alpha < 0) this.integratedAngles.alpha += 360;
+                while (this.integratedAngles.alpha >= 360) this.integratedAngles.alpha -= 360;
+                
+                // Keep beta and gamma in -180 to 180
+                this.integratedAngles.beta = this.normalizeAngle(this.integratedAngles.beta);
+                this.integratedAngles.gamma = this.normalizeAngle(this.integratedAngles.gamma);
+                
+                // Update current orientation with fused values
+                this.current.orientation = {
+                    alpha: this.cleanValue(this.integratedAngles.alpha),
+                    beta: this.cleanValue(this.integratedAngles.beta),
+                    gamma: this.cleanValue(this.integratedAngles.gamma)
+                };
+                
+                // Update timestamp for next iteration
                 this.lastGyroTimestamp = currentTime;
+                
+                // Trigger update with integrated orientation
+                if (this.onUpdate) {
+                    this.onUpdate(this.getData());
+                }
             } else if (this.useGyroIntegration && !this.calibrated) {
                 // Waiting for calibration
                 if (!this._loggedWaiting) {
                     console.log('⏳ Waiting for calibration to start sensor fusion...');
                     this._loggedWaiting = true;
+                }
+            } else if (this.useGyroIntegration && !this.hasAccelData) {
+                // Waiting for accelerometer data
+                if (!this._loggedNoAccel) {
+                    console.log('⏳ Waiting for accelerometer data...');
+                    this._loggedNoAccel = true;
                 }
             }
         }
