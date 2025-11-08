@@ -37,6 +37,10 @@ class MotionSensor {
         };
         this.nativeOrientation = { alpha: 0, beta: 0, gamma: 0 };
         this.lastOrientationUpdate = 0;
+        this.absoluteSensor = null;
+        this.magnetometerSensor = null;
+        this.usingAbsoluteSensor = false;
+        this.filteredHeading = null;
         
         // Smoothing - lighter for Xiaomi phones
         this.smoothingFactor = this.isMIUI ? 0.7 : 0.85;
@@ -57,6 +61,7 @@ class MotionSensor {
         this.orientationCorrectionWeight = this.isMIUI ? 0.1 : 0.05;
         this.accelFilterWeight = 0.9; // Smoothing for accelerometer
         this.filteredAccel = { x: 0, y: 0, z: 0 };
+    this.magnetometerFilterWeight = 0.85;
         
         // Track if we're getting data
         this.hasGyroData = false;
@@ -75,6 +80,151 @@ class MotionSensor {
         this.handleOrientation = this.handleOrientation.bind(this);
     }
     
+    startAbsoluteOrientationSensor() {
+        if (!('AbsoluteOrientationSensor' in window)) {
+            console.log('AbsoluteOrientationSensor not supported in this browser.');
+            return;
+        }
+
+        try {
+            const sensor = new AbsoluteOrientationSensor({ frequency: 60, referenceFrame: 'device' });
+            sensor.onreading = () => this.handleAbsoluteOrientationSensor(sensor);
+            sensor.onerror = (event) => {
+                console.warn('AbsoluteOrientationSensor error:', event.error || event.name);
+            };
+            sensor.start();
+            this.absoluteSensor = sensor;
+            this.usingAbsoluteSensor = true;
+            this.useGyroIntegration = false; // Use high fidelity orientation when available
+            console.log('✅ AbsoluteOrientationSensor started');
+        } catch (error) {
+            console.warn('Absolute orientation sensor init failed:', error);
+            this.absoluteSensor = null;
+            this.usingAbsoluteSensor = false;
+        }
+    }
+
+    handleAbsoluteOrientationSensor(sensor) {
+        if (!sensor || !sensor.quaternion) return;
+
+        const [qx, qy, qz, qw] = sensor.quaternion;
+        if ([qx, qy, qz, qw].some((value) => value === null || Number.isNaN(value))) {
+            return;
+        }
+
+        const ysqr = qy * qy;
+
+        const t0 = 2 * (qw * qx + qy * qz);
+        const t1 = 1 - 2 * (qx * qx + ysqr);
+        const roll = Math.atan2(t0, t1);
+
+        let t2 = 2 * (qw * qy - qz * qx);
+        t2 = Math.min(1, Math.max(-1, t2));
+        const pitch = Math.asin(t2);
+
+        const t3 = 2 * (qw * qz + qx * qy);
+        const t4 = 1 - 2 * (ysqr + qz * qz);
+        const yaw = Math.atan2(t3, t4);
+
+        const alpha = this.wrapAngle360(this.radiansToDegrees(yaw));
+        const beta = this.normalizeAngle(this.radiansToDegrees(pitch));
+        const gamma = this.normalizeAngle(this.radiansToDegrees(roll));
+
+        this.hasOrientationData = true;
+        this.nativeOrientation = { alpha, beta, gamma };
+        this.current.apiOrientation = {
+            alpha: this.roundToDecimal(alpha),
+            beta: this.roundToDecimal(beta),
+            gamma: this.roundToDecimal(gamma)
+        };
+
+        // Absolute sensor already handles drift; no need for manual fusion
+        this.current.orientation = {
+            alpha: this.cleanValue(alpha),
+            beta: this.cleanValue(beta),
+            gamma: this.cleanValue(gamma)
+        };
+
+        if (this.onUpdate) {
+            this.onUpdate(this.getData());
+        }
+    }
+
+    startMagnetometerSensor() {
+        if (!('Magnetometer' in window)) {
+            console.log('Magnetometer API not supported in this browser.');
+            return;
+        }
+
+        try {
+            const sensor = new Magnetometer({ frequency: 30 });
+            sensor.onreading = () => this.handleMagnetometerSensor(sensor);
+            sensor.onerror = (event) => {
+                console.warn('Magnetometer error:', event.error || event.name);
+            };
+            sensor.start();
+            this.magnetometerSensor = sensor;
+            console.log('✅ Magnetometer sensor started');
+        } catch (error) {
+            console.warn('Magnetometer sensor init failed:', error);
+            this.magnetometerSensor = null;
+        }
+    }
+
+    handleMagnetometerSensor(sensor) {
+        if (!sensor) return;
+
+        const { x, y, z } = sensor;
+        if ([x, y, z].some((value) => value === null || value === undefined || Number.isNaN(value))) {
+            return;
+        }
+
+        // Basic tilt compensation using current accel orientation when available
+        let headingRad;
+        if (this.hasAccelData) {
+            const accelAngles = this.getAccelerometerAngles();
+            const pitchRad = accelAngles.beta * (Math.PI / 180);
+            const rollRad = accelAngles.gamma * (Math.PI / 180);
+
+            const compensatedX = x * Math.cos(pitchRad) + z * Math.sin(pitchRad);
+            const compensatedY = x * Math.sin(rollRad) * Math.sin(pitchRad) + y * Math.cos(rollRad) - z * Math.sin(rollRad) * Math.cos(pitchRad);
+            headingRad = Math.atan2(-compensatedY, compensatedX);
+        } else {
+            headingRad = Math.atan2(y, x);
+        }
+
+        let headingDeg = this.wrapAngle360(this.radiansToDegrees(headingRad));
+
+        if (this.filteredHeading === null) {
+            this.filteredHeading = headingDeg;
+        } else {
+            const smoothed = this.smoothHeading(headingDeg, this.filteredHeading, this.magnetometerFilterWeight);
+            this.filteredHeading = smoothed;
+        }
+
+        const filteredHeading = this.filteredHeading ?? headingDeg;
+
+        this.hasMagData = true;
+        this.current.magnetometer = {
+            heading: this.roundToDecimal(filteredHeading),
+            raw: headingDeg,
+            available: true,
+            source: 'GenericSensor'
+        };
+
+        if (this.useGyroIntegration) {
+            const correction = this.normalizeAngle(filteredHeading - this.integratedAngles.alpha);
+            this.integratedAngles.alpha = this.wrapAngle360(
+                this.integratedAngles.alpha + this.yawCorrectionWeight * correction
+            );
+            this.current.orientation.alpha = this.cleanValue(this.integratedAngles.alpha);
+        }
+
+        if (this.onUpdate) {
+            this.onUpdate(this.getData());
+        }
+    }
+
     /**
      * Request permissions and start sensors
      */
@@ -122,6 +272,10 @@ class MotionSensor {
             window.addEventListener('deviceorientation', this.handleOrientation);
             
             this.isActive = true;
+
+            // Attempt to start higher fidelity sensors if available
+            this.startAbsoluteOrientationSensor();
+            this.startMagnetometerSensor();
             
             // Auto-calibrate after 1 second (longer for MIUI)
             const calibrationDelay = this.isMIUI ? 1000 : 500;
@@ -159,6 +313,28 @@ class MotionSensor {
     this.nativeOrientation = { alpha: 0, beta: 0, gamma: 0 };
         this.lastGyroTimestamp = null;
     this.lastOrientationUpdate = 0;
+        this.filteredHeading = null;
+
+        if (this.absoluteSensor) {
+            try { this.absoluteSensor.stop(); } catch (err) {
+                console.warn('AbsoluteOrientationSensor stop error:', err);
+            }
+            this.absoluteSensor.onreading = null;
+            this.absoluteSensor.onerror = null;
+            this.absoluteSensor = null;
+        }
+
+        if (this.magnetometerSensor) {
+            try { this.magnetometerSensor.stop(); } catch (err) {
+                console.warn('Magnetometer stop error:', err);
+            }
+            this.magnetometerSensor.onreading = null;
+            this.magnetometerSensor.onerror = null;
+            this.magnetometerSensor = null;
+        }
+
+        this.usingAbsoluteSensor = false;
+        this.useGyroIntegration = this.isMIUI;
     }
     
     /**
@@ -233,6 +409,16 @@ class MotionSensor {
     roundToDecimal(value) {
         if (value === null || value === undefined || Number.isNaN(value)) return 0;
         return Math.round(value * 10) / 10;
+    }
+
+    radiansToDegrees(radians) {
+        return radians * (180 / Math.PI);
+    }
+
+    smoothHeading(current, previous, factor) {
+        if (previous === null || previous === undefined) return current;
+        const diff = this.normalizeAngle(current - previous);
+        return this.wrapAngle360(previous + diff * (1 - factor));
     }
     
     /**
@@ -469,18 +655,31 @@ class MotionSensor {
         if (heading !== null) {
             const wrappedHeading = this.wrapAngle360(heading);
             this.hasMagData = true;
+            if (this.filteredHeading === null) {
+                this.filteredHeading = wrappedHeading;
+            } else {
+                this.filteredHeading = this.smoothHeading(wrappedHeading, this.filteredHeading, this.magnetometerFilterWeight);
+            }
             this.current.magnetometer = {
-                heading: this.roundToDecimal(wrappedHeading),
+                heading: this.roundToDecimal(this.filteredHeading ?? wrappedHeading),
                 raw: wrappedHeading,
                 available: true,
                 source: headingSource || 'unknown'
             };
             if (this.useGyroIntegration) {
-                const correction = this.normalizeAngle(wrappedHeading - this.integratedAngles.alpha);
+                const correction = this.normalizeAngle((this.filteredHeading ?? wrappedHeading) - this.integratedAngles.alpha);
                 this.integratedAngles.alpha = this.wrapAngle360(
                     this.integratedAngles.alpha + this.yawCorrectionWeight * correction
                 );
             }
+        }
+
+        if (this.usingAbsoluteSensor) {
+            // AbsoluteOrientationSensor already updates orientation; only propagate magnetometer/debug info
+            if (this.onUpdate) {
+                this.onUpdate(this.getData());
+            }
+            return;
         }
 
         let alpha = rawAlpha ?? this.previousOrientation.alpha;
