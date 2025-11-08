@@ -15,12 +15,8 @@ class MotionSensor {
             gamma: 0
         };
         
-        // Integrated angles from gyroscope (more stable)
-        this.integratedAngles = {
-            alpha: 0,
-            beta: 0,
-            gamma: 0
-        };
+        // Integrated alpha from gyroscope only (beta/gamma from orientation API)
+        this.integratedAlpha = 0;
         
         // Last timestamp for integration
         this.lastTimestamp = null;
@@ -32,12 +28,12 @@ class MotionSensor {
             orientation: { alpha: 0, beta: 0, gamma: 0 }
         };
         
-        // Smoothing filter
-        this.smoothingFactor = 0.9; // Higher = more smoothing
+        // Smoothing filter for orientation
+        this.smoothingFactor = 0.85; // Balanced smoothing
         this.previousOrientation = { alpha: 0, beta: 0, gamma: 0 };
         
         // Drift compensation threshold (ignore very small rotation rates)
-        this.driftThreshold = 0.1; // degrees per second
+        this.driftThreshold = 0.15; // degrees per second
         
         // Callbacks
         this.onUpdate = null;
@@ -97,23 +93,19 @@ class MotionSensor {
      * Calibrate - set current position as zero point
      */
     calibrate() {
-        // Reset integrated angles to zero
-        this.integratedAngles = {
-            alpha: 0,
-            beta: 0,
-            gamma: 0
-        };
+        // Reset integrated alpha to zero (for gyroscope-based rotation)
+        this.integratedAlpha = 0;
         
-        // Also store current orientation as reference
+        // Store current orientation as zero reference for beta/gamma
         this.zeroPoint = {
-            alpha: this.current.orientation.alpha,
+            alpha: 0, // Not used, we use gyro integration for alpha
             beta: this.current.orientation.beta,
             gamma: this.current.orientation.gamma
         };
         
         this.calibrated = true;
         this.lastTimestamp = null; // Reset timestamp
-        console.log('Motion sensor calibrated - angles reset to zero');
+        console.log('Motion sensor calibrated - Beta/Gamma zero:', this.zeroPoint);
     }
     
     /**
@@ -157,19 +149,15 @@ class MotionSensor {
                 gamma: this.cleanValue(gamma)
             };
             
-            // Integrate gyroscope data if calibrated
+            // Integrate ONLY alpha from gyroscope (rotation around Z-axis)
             if (this.calibrated && this.lastTimestamp) {
                 const deltaTime = (currentTime - this.lastTimestamp) / 1000; // Convert to seconds
                 
-                // Integrate rotation rates to get angles
-                this.integratedAngles.alpha += alpha * deltaTime;
-                this.integratedAngles.beta += beta * deltaTime;
-                this.integratedAngles.gamma += gamma * deltaTime;
+                // Integrate alpha rotation rate to get angle
+                this.integratedAlpha += alpha * deltaTime;
                 
-                // Normalize angles to prevent overflow
-                this.integratedAngles.alpha = this.normalizeAngle(this.integratedAngles.alpha);
-                this.integratedAngles.beta = this.normalizeAngle(this.integratedAngles.beta);
-                this.integratedAngles.gamma = this.normalizeAngle(this.integratedAngles.gamma);
+                // Normalize alpha to prevent overflow
+                this.integratedAlpha = this.normalizeAngle(this.integratedAlpha);
             }
         }
         
@@ -195,38 +183,23 @@ class MotionSensor {
     handleOrientation(event) {
         if (!this.isActive) return;
         
-        let alpha = event.alpha || 0;
+        // We only use beta and gamma from orientation API (tilt angles)
+        // Alpha comes from gyroscope integration
         let beta = event.beta || 0;
         let gamma = event.gamma || 0;
         
-        // Handle alpha wraparound (0-360 degrees)
-        // Calculate shortest distance between current and previous alpha
-        let alphaDiff = alpha - this.previousOrientation.alpha;
-        if (alphaDiff > 180) alphaDiff -= 360;
-        if (alphaDiff < -180) alphaDiff += 360;
-        
-        // Apply smoothing with wraparound handling
-        let smoothedAlpha = this.previousOrientation.alpha + alphaDiff * (1 - this.smoothingFactor);
-        // Normalize back to 0-360 range
-        if (smoothedAlpha < 0) smoothedAlpha += 360;
-        if (smoothedAlpha >= 360) smoothedAlpha -= 360;
-        
-        alpha = smoothedAlpha;
+        // Apply smoothing to beta and gamma
         beta = this.smoothValue(beta, this.previousOrientation.beta, this.smoothingFactor);
         gamma = this.smoothValue(gamma, this.previousOrientation.gamma, this.smoothingFactor);
         
-        this.previousOrientation = { alpha, beta, gamma };
+        this.previousOrientation = { alpha: 0, beta, gamma };
         
-        // Store absolute values
+        // Store values
         this.current.orientation = {
-            alpha: this.cleanValue(alpha),
+            alpha: 0, // Not used from orientation API
             beta: this.cleanValue(beta),
             gamma: this.cleanValue(gamma)
         };
-        
-        if (this.onUpdate) {
-            this.onUpdate(this.getData());
-        }
     }
     
     /**
@@ -249,11 +222,12 @@ class MotionSensor {
             };
         }
         
-        // Use integrated gyroscope data for precise relative angles
+        // Alpha: Use integrated gyroscope data (rotation around Z-axis)
+        // Beta/Gamma: Use orientation API relative to calibration point
         return {
-            alpha: this.cleanValue(this.integratedAngles.alpha),
-            beta: this.cleanValue(this.integratedAngles.beta),
-            gamma: this.cleanValue(this.integratedAngles.gamma)
+            alpha: this.cleanValue(this.integratedAlpha),
+            beta: this.cleanValue(this.current.orientation.beta - this.zeroPoint.beta),
+            gamma: this.cleanValue(this.current.orientation.gamma - this.zeroPoint.gamma)
         };
     }
     
