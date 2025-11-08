@@ -290,6 +290,22 @@
                     </div>
                 </div>
 
+                <h3 style="margin-top: 20px;">Debug - Absolute Values</h3>
+                <div class="sensor-data">
+                    <div class="sensor-value">
+                        <div class="label">Abs Alpha</div>
+                        <div class="value" id="absAlpha">0.0</div>
+                    </div>
+                    <div class="sensor-value">
+                        <div class="label">Abs Beta</div>
+                        <div class="value" id="absBeta">0.0</div>
+                    </div>
+                    <div class="sensor-value">
+                        <div class="label">Abs Gamma</div>
+                        <div class="value" id="absGamma">0.0</div>
+                    </div>
+                </div>
+
                 <div class="orientation-visual">
                     <div id="deviceCube" class="device-cube"></div>
                 </div>
@@ -386,6 +402,11 @@
             document.getElementById('accelX').textContent = data.accel.x.toFixed(1);
             document.getElementById('accelY').textContent = data.accel.y.toFixed(1);
             document.getElementById('accelZ').textContent = data.accel.z.toFixed(1);
+
+            // Update absolute orientation values (for debugging)
+            document.getElementById('absAlpha').textContent = data.orientation.absolute.alpha.toFixed(1);
+            document.getElementById('absBeta').textContent = data.orientation.absolute.beta.toFixed(1);
+            document.getElementById('absGamma').textContent = data.orientation.absolute.gamma.toFixed(1);
 
             // Update orientation (relative to zero point)
             const relative = data.orientation.relative;

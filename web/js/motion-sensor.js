@@ -216,19 +216,34 @@ class MotionSensor {
         
         this.hasOrientationData = true;
         
+        // Get raw values
+        let rawAlpha = event.alpha;
+        let rawBeta = event.beta;
+        let rawGamma = event.gamma;
+        
         // Log first orientation reading for debugging
         if (!this.previousOrientation.beta && !this.previousOrientation.gamma) {
             console.log('First orientation reading:', {
-                alpha: event.alpha,
-                beta: event.beta,
-                gamma: event.gamma
+                alpha: rawAlpha,
+                beta: rawBeta,
+                gamma: rawGamma,
+                alphaNull: rawAlpha === null,
+                betaNull: rawBeta === null,
+                gammaNull: rawGamma === null
             });
         }
         
-        // Get all three orientation angles
-        let alpha = event.alpha || 0;
-        let beta = event.beta || 0;
-        let gamma = event.gamma || 0;
+        // Check if alpha is available
+        if (rawAlpha === null || rawAlpha === undefined) {
+            console.warn('⚠️ Alpha not available on this device! Using fallback.');
+            // Alpha not available - use 0 or keep previous
+            rawAlpha = this.previousOrientation.alpha || 0;
+        }
+        
+        // Get all three orientation angles (or defaults)
+        let alpha = rawAlpha || 0;
+        let beta = rawBeta || 0;
+        let gamma = rawGamma || 0;
         
         // Handle alpha wraparound (0-360 degrees)
         let alphaDiff = alpha - this.previousOrientation.alpha;
