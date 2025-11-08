@@ -229,14 +229,14 @@ class MotionSensor {
                 gamma: rawGamma,
                 alphaNull: rawAlpha === null,
                 betaNull: rawBeta === null,
-                gammaNull: rawGamma === null
+                gammaNull: rawGamma === null,
+                isMIUI: this.isMIUI
             });
         }
         
         // Check if alpha is available
         if (rawAlpha === null || rawAlpha === undefined) {
             console.warn('⚠️ Alpha not available on this device! Using fallback.');
-            // Alpha not available - use 0 or keep previous
             rawAlpha = this.previousOrientation.alpha || 0;
         }
         
@@ -244,6 +244,19 @@ class MotionSensor {
         let alpha = rawAlpha || 0;
         let beta = rawBeta || 0;
         let gamma = rawGamma || 0;
+        
+        // MIUI FIX: Alpha has severe drift on MIUI devices
+        // Detect when device is stationary and lock alpha
+        if (this.isMIUI && this.calibrated) {
+            const betaDiff = Math.abs(beta - this.previousOrientation.beta);
+            const gammaDiff = Math.abs(gamma - this.previousOrientation.gamma);
+            
+            // If beta and gamma are stable (device not moving), lock alpha
+            if (betaDiff < 0.1 && gammaDiff < 0.1) {
+                // Device is stationary - keep alpha locked
+                alpha = this.previousOrientation.alpha || 0;
+            }
+        }
         
         // Handle alpha wraparound (0-360 degrees)
         let alphaDiff = alpha - this.previousOrientation.alpha;
