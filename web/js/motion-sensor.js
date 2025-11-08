@@ -41,6 +41,7 @@ class MotionSensor {
         this.magnetometerSensor = null;
         this.usingAbsoluteSensor = false;
         this.filteredHeading = null;
+        this.gyroBias = { alpha: 0, beta: 0, gamma: 0 };
         
         // Smoothing - lighter for Xiaomi phones
         this.smoothingFactor = this.isMIUI ? 0.7 : 0.85;
@@ -48,6 +49,10 @@ class MotionSensor {
         
         // Drift compensation - stricter for Xiaomi
         this.driftThreshold = this.isMIUI ? 0.2 : 0.15;
+        this.stationaryRotationThreshold = 0.25; // deg/s total to consider still
+        this.stationaryAccelThreshold = 0.6; // m/s^2 deviation from gravity
+        this.biasLearningRate = 0.015; // how fast gyro bias adapts when stationary
+        this.gravity = 9.80665;
         
         // Gyroscope integration (for MIUI devices)
         this.useGyroIntegration = this.isMIUI;
@@ -56,19 +61,13 @@ class MotionSensor {
         
         // Sensor fusion - complementary filter weights
         // Higher gyro weight = more responsive, lower = more drift correction
-        this.gyroWeight = 0.98; // 98% gyro, 2% accel/mag correction
-        this.yawCorrectionWeight = this.isMIUI ? 0.2 : 0.1;
-        this.orientationCorrectionWeight = this.isMIUI ? 0.1 : 0.05;
+        this.gyroWeight = 0.97; // slightly lower to allow more correction
+        this.yawCorrectionWeight = this.isMIUI ? 0.3 : 0.18;
+        this.orientationCorrectionWeight = this.isMIUI ? 0.35 : 0.15;
         this.accelFilterWeight = 0.9; // Smoothing for accelerometer
         this.filteredAccel = { x: 0, y: 0, z: 0 };
     this.magnetometerFilterWeight = 0.85;
         
-    // Gyro bias estimation (helps when magnetometer unavailable)
-    this.gyroBias = { alpha: 0, beta: 0, gamma: 0 };
-    this.stationaryCounter = 0;
-    this.stationaryThreshold = 0.5; // deg/s considered still
-    this.biasLearningRate = 0.02;
-
         // Track if we're getting data
         this.hasGyroData = false;
         this.hasAccelData = false;
@@ -321,7 +320,6 @@ class MotionSensor {
     this.lastOrientationUpdate = 0;
         this.filteredHeading = null;
     this.gyroBias = { alpha: 0, beta: 0, gamma: 0 };
-    this.stationaryCounter = 0;
 
         if (this.absoluteSensor) {
             try { this.absoluteSensor.stop(); } catch (err) {
@@ -428,6 +426,10 @@ class MotionSensor {
         const diff = this.normalizeAngle(current - previous);
         return this.wrapAngle360(previous + diff * (1 - factor));
     }
+
+    updateBias(currentBias, measurement, rate) {
+        return currentBias * (1 - rate) + measurement * rate;
+    }
     
     /**
      * Apply smoothing filter to reduce noise
@@ -449,6 +451,7 @@ class MotionSensor {
 
         // Accelerometer data - processed first for tilt reference
         let accelAngles = null;
+        let accelMagnitude = null;
         if (event.accelerationIncludingGravity) {
             this.hasAccelData = true;
             if (this._loggedNoAccel) this._loggedNoAccel = false;
@@ -469,6 +472,11 @@ class MotionSensor {
             };
 
             accelAngles = this.getAccelerometerAngles();
+            accelMagnitude = Math.sqrt(
+                this.filteredAccel.x * this.filteredAccel.x +
+                this.filteredAccel.y * this.filteredAccel.y +
+                this.filteredAccel.z * this.filteredAccel.z
+            );
         }
 
         // Gyroscope (rotation rate in degrees/second)
@@ -480,39 +488,31 @@ class MotionSensor {
             rawBeta = event.rotationRate.beta ?? 0;
             rawGamma = event.rotationRate.gamma ?? 0;
 
-            const stationary =
-                Math.abs(rawAlpha) < this.stationaryThreshold &&
-                Math.abs(rawBeta) < this.stationaryThreshold &&
-                Math.abs(rawGamma) < this.stationaryThreshold;
+            const rotationMagnitude = Math.abs(rawAlpha) + Math.abs(rawBeta) + Math.abs(rawGamma);
+            const accelDeviation = accelMagnitude !== null ? Math.abs(accelMagnitude - this.gravity) : null;
+            const isStationary = rotationMagnitude < this.stationaryRotationThreshold &&
+                (accelDeviation === null || accelDeviation < this.stationaryAccelThreshold);
 
-            if (stationary) {
-                this.stationaryCounter = Math.min(this.stationaryCounter + 1, 120);
-                const weight = this.biasLearningRate;
-                this.gyroBias.alpha = this.gyroBias.alpha * (1 - weight) + rawAlpha * weight;
-                this.gyroBias.beta = this.gyroBias.beta * (1 - weight) + rawBeta * weight;
-                this.gyroBias.gamma = this.gyroBias.gamma * (1 - weight) + rawGamma * weight;
-            } else {
-                this.stationaryCounter = 0;
+            if (isStationary) {
+                this.gyroBias.alpha = this.updateBias(this.gyroBias.alpha, rawAlpha, this.biasLearningRate);
+                this.gyroBias.beta = this.updateBias(this.gyroBias.beta, rawBeta, this.biasLearningRate);
+                this.gyroBias.gamma = this.updateBias(this.gyroBias.gamma, rawGamma, this.biasLearningRate);
             }
 
-            const correctedAlpha = rawAlpha - this.gyroBias.alpha;
-            const correctedBeta = rawBeta - this.gyroBias.beta;
-            const correctedGamma = rawGamma - this.gyroBias.gamma;
+            const correctedAlphaRaw = rawAlpha - this.gyroBias.alpha;
+            const correctedBetaRaw = rawBeta - this.gyroBias.beta;
+            const correctedGammaRaw = rawGamma - this.gyroBias.gamma;
 
             // Apply drift threshold for display purposes
-            const alpha = Math.abs(correctedAlpha) > this.driftThreshold ? correctedAlpha : 0;
-            const beta = Math.abs(correctedBeta) > this.driftThreshold ? correctedBeta : 0;
-            const gamma = Math.abs(correctedGamma) > this.driftThreshold ? correctedGamma : 0;
+            const alpha = Math.abs(correctedAlphaRaw) > this.driftThreshold ? correctedAlphaRaw : 0;
+            const beta = Math.abs(correctedBetaRaw) > this.driftThreshold ? correctedBetaRaw : 0;
+            const gamma = Math.abs(correctedGammaRaw) > this.driftThreshold ? correctedGammaRaw : 0;
 
             this.current.gyro = {
                 alpha: this.cleanValue(alpha),
                 beta: this.cleanValue(beta),
                 gamma: this.cleanValue(gamma)
             };
-
-            rawAlpha = correctedAlpha;
-            rawBeta = correctedBeta;
-            rawGamma = correctedGamma;
         }
 
         // SENSOR FUSION: Gyroscope integration + Accelerometer + Magnetometer correction
@@ -535,9 +535,13 @@ class MotionSensor {
 
             if (dt > 0) {
                 // Integrate raw gyroscope (primary orientation source)
-                this.integratedAngles.alpha += rawAlpha * dt;
-                this.integratedAngles.beta += rawBeta * dt;
-                this.integratedAngles.gamma += rawGamma * dt;
+                const correctedAlphaRaw = rawAlpha - this.gyroBias.alpha;
+                const correctedBetaRaw = rawBeta - this.gyroBias.beta;
+                const correctedGammaRaw = rawGamma - this.gyroBias.gamma;
+
+                this.integratedAngles.alpha += correctedAlphaRaw * dt;
+                this.integratedAngles.beta += correctedBetaRaw * dt;
+                this.integratedAngles.gamma += correctedGammaRaw * dt;
             }
 
             if (accelAngles) {
