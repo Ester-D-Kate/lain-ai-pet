@@ -227,6 +227,12 @@
     <div class="container">
         <h1>🤖 Lain AI Pet</h1>
         <p class="subtitle">Mobile Sensor Dashboard</p>
+        
+        <!-- VERSION BANNER -->
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: 3px solid #fff; color: white; padding: 15px; margin: 20px 0; border-radius: 10px; text-align: center; font-weight: bold; font-size: 1.1em; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+            📡 VERSION 2.0 - SENSOR FUSION ACTIVE 📡<br>
+            <span style="font-size: 0.85em; font-weight: normal;">Gyroscope Integration + Accelerometer Correction</span>
+        </div>
 
         <!-- Gyroscope & Accelerometer -->
         <div class="card">
@@ -237,12 +243,12 @@
             <div id="deviceInfo" class="status info" style="font-size: 0.8em; margin-top: 5px;">
                 Detecting device...
             </div>
-            <div id="miuiWarning" style="display: none; background: #4CAF50; color: white; padding: 10px; margin: 10px 0; border-radius: 8px; font-size: 0.85em;">
-                ✅ <strong>MIUI Sensor Fusion Active!</strong><br>
-                Using Gyroscope + Accelerometer complementary filter for drift-free orientation
+            <div id="miuiWarning" style="display: none; background: #4CAF50; color: white; padding: 15px; margin: 10px 0; border-radius: 8px; font-size: 1em; border: 2px solid white;">
+                ✅ <strong>MIUI SENSOR FUSION MODE ENABLED!</strong><br>
+                <span style="font-size: 0.9em;">Using Gyroscope + Accelerometer complementary filter for drift-free orientation</span>
             </div>
-            <div id="sensorFusionStatus" style="display: none; background: #2196F3; color: white; padding: 8px; margin: 10px 0; border-radius: 5px; font-size: 0.8em; text-align: center;">
-                🔄 Updating...
+            <div id="sensorFusionStatus" style="display: none; background: #2196F3; color: white; padding: 12px; margin: 10px 0; border-radius: 5px; font-size: 0.95em; text-align: center; font-weight: bold;">
+                🔄 Initializing sensor fusion...
             </div>
             <button id="startMotion" class="primary">Start Motion Sensors</button>
             <button id="stopMotion" class="danger hidden">Stop Motion Sensors</button>
@@ -416,7 +422,11 @@
             if (motionSensor.isMIUI && updateCount % 10 === 0) {
                 const status = document.getElementById('sensorFusionStatus');
                 if (status) {
-                    status.textContent = `🔄 Sensor Fusion: ${updateCount} updates | Gyro: ${data.gyro.alpha.toFixed(1)}°/s`;
+                    const alpha = data.orientation.absolute.alpha.toFixed(1);
+                    const beta = data.orientation.absolute.beta.toFixed(1);
+                    const gamma = data.orientation.absolute.gamma.toFixed(1);
+                    status.innerHTML = `✅ SENSOR FUSION WORKING! Updates: ${updateCount}<br>
+                        <span style="font-size:0.85em">Abs Angles: α=${alpha}° β=${beta}° γ=${gamma}°</span>`;
                     status.style.background = '#4CAF50';
                 }
             }
