@@ -1,0 +1,17 @@
+[build]
+  base = "web"
+  publish = "."
+  command = "echo 'No build needed - static site'"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "no-referrer"
+    Permissions-Policy = "accelerometer=*, camera=*, gyroscope=*, microphone=*"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

@@ -1,0 +1,6 @@
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Permissions-Policy: accelerometer=*, camera=*, gyroscope=*, microphone=*, geolocation=*
+  Feature-Policy: accelerometer *; camera *; gyroscope *; microphone *; geolocation *
