@@ -15,6 +15,16 @@ class MotionSensor {
             gamma: 0
         };
         
+        // Integrated angles from gyroscope (more stable)
+        this.integratedAngles = {
+            alpha: 0,
+            beta: 0,
+            gamma: 0
+        };
+        
+        // Last timestamp for integration
+        this.lastTimestamp = null;
+        
         // Current readings
         this.current = {
             gyro: { alpha: 0, beta: 0, gamma: 0 },
@@ -23,8 +33,11 @@ class MotionSensor {
         };
         
         // Smoothing filter
-        this.smoothingFactor = 0.9; // Higher = more smoothing (reduced from 0.8 for stability)
+        this.smoothingFactor = 0.9; // Higher = more smoothing
         this.previousOrientation = { alpha: 0, beta: 0, gamma: 0 };
+        
+        // Drift compensation threshold (ignore very small rotation rates)
+        this.driftThreshold = 0.1; // degrees per second
         
         // Callbacks
         this.onUpdate = null;
@@ -84,13 +97,23 @@ class MotionSensor {
      * Calibrate - set current position as zero point
      */
     calibrate() {
+        // Reset integrated angles to zero
+        this.integratedAngles = {
+            alpha: 0,
+            beta: 0,
+            gamma: 0
+        };
+        
+        // Also store current orientation as reference
         this.zeroPoint = {
             alpha: this.current.orientation.alpha,
             beta: this.current.orientation.beta,
             gamma: this.current.orientation.gamma
         };
+        
         this.calibrated = true;
-        console.log('Motion sensor calibrated:', this.zeroPoint);
+        this.lastTimestamp = null; // Reset timestamp
+        console.log('Motion sensor calibrated - angles reset to zero');
     }
     
     /**
@@ -115,14 +138,42 @@ class MotionSensor {
     handleMotion(event) {
         if (!this.isActive) return;
         
-        // Gyroscope (rotation rate)
+        const currentTime = Date.now();
+        
+        // Gyroscope (rotation rate in degrees/second)
         if (event.rotationRate) {
+            const rawAlpha = event.rotationRate.alpha || 0;
+            const rawBeta = event.rotationRate.beta || 0;
+            const rawGamma = event.rotationRate.gamma || 0;
+            
+            // Apply drift threshold - ignore tiny movements
+            const alpha = Math.abs(rawAlpha) > this.driftThreshold ? rawAlpha : 0;
+            const beta = Math.abs(rawBeta) > this.driftThreshold ? rawBeta : 0;
+            const gamma = Math.abs(rawGamma) > this.driftThreshold ? rawGamma : 0;
+            
             this.current.gyro = {
-                alpha: this.cleanValue(event.rotationRate.alpha),
-                beta: this.cleanValue(event.rotationRate.beta),
-                gamma: this.cleanValue(event.rotationRate.gamma)
+                alpha: this.cleanValue(alpha),
+                beta: this.cleanValue(beta),
+                gamma: this.cleanValue(gamma)
             };
+            
+            // Integrate gyroscope data if calibrated
+            if (this.calibrated && this.lastTimestamp) {
+                const deltaTime = (currentTime - this.lastTimestamp) / 1000; // Convert to seconds
+                
+                // Integrate rotation rates to get angles
+                this.integratedAngles.alpha += alpha * deltaTime;
+                this.integratedAngles.beta += beta * deltaTime;
+                this.integratedAngles.gamma += gamma * deltaTime;
+                
+                // Normalize angles to prevent overflow
+                this.integratedAngles.alpha = this.normalizeAngle(this.integratedAngles.alpha);
+                this.integratedAngles.beta = this.normalizeAngle(this.integratedAngles.beta);
+                this.integratedAngles.gamma = this.normalizeAngle(this.integratedAngles.gamma);
+            }
         }
+        
+        this.lastTimestamp = currentTime;
         
         // Accelerometer
         if (event.accelerationIncludingGravity) {
@@ -198,16 +249,11 @@ class MotionSensor {
             };
         }
         
-        // Calculate relative alpha with proper wraparound handling
-        let relativeAlpha = this.current.orientation.alpha - this.zeroPoint.alpha;
-        
-        // Normalize to -180 to 180 range
-        relativeAlpha = this.normalizeAngle(relativeAlpha);
-        
+        // Use integrated gyroscope data for precise relative angles
         return {
-            alpha: this.cleanValue(relativeAlpha),
-            beta: this.cleanValue(this.normalizeAngle(this.current.orientation.beta - this.zeroPoint.beta)),
-            gamma: this.cleanValue(this.normalizeAngle(this.current.orientation.gamma - this.zeroPoint.gamma))
+            alpha: this.cleanValue(this.integratedAngles.alpha),
+            beta: this.cleanValue(this.integratedAngles.beta),
+            gamma: this.cleanValue(this.integratedAngles.gamma)
         };
     }
     
